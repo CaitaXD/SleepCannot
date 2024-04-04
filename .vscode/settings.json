@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "dynamicarray.h": "c",
+        "stdio.h": "c",
+        "xtr1common": "c"
+    }
+}
