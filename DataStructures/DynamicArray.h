@@ -3,8 +3,11 @@
 
 #include "../macros.h"
 #include <assert.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
 
 #ifndef DYNAMIC_ARRAY_API
 #define DYNAMIC_ARRAY_API
@@ -18,7 +21,7 @@
 #error "You must define all or none of ALLOC, FREE, REALLOC"
 #endif
 
-#define dynamic_array(type)                                                    \
+#define DynamicArray(type)                                                     \
   struct {                                                                     \
     type *items;                                                               \
     size_t count;                                                              \
@@ -56,9 +59,9 @@
   }
 
 #define dynamic_array_push(array, value)                                       \
-  assert_compatible_types((array), (value));                                   \
-  dynamic_array_reserve((array), (array).count + 1);                           \
-  (array).items[(array).count++] = (value);
+  STATEMENT(assert_compatible_types((array), (value));                         \
+            dynamic_array_reserve((array), (array).count + 1);                 \
+            (array).items[(array).count++] = (value);)
 
 #define dynamic_array_pop(array)                                               \
   (assert_non_empty(array), ((array).items[--(array).count]))
@@ -72,6 +75,28 @@
 #define dynamic_array_at(array, index) ((array).items + (index))
 
 #define dynamic_array_empty(array) ((array).count == 0)
+
+#define dynamic_array_foreach(type, val, array)                                \
+  for (size_t _i = 0, _len = (array).count; _i < _len;)                         \
+         for(type val = *dynamic_array_at(array, _i); _i < _len; val = * dynamic_array_at(array, ++_i))
+
+typedef DynamicArray(uint8_t) DynamicArray;
+
+#define dynamic_array_contains(array, item)                                    \
+  (_dynamic_array_index_of(*(DynamicArray *)&(array), (void *)&(item),         \
+                           sizeof(item)) != -1)
+
+// ssize_t _dynamic_array_index_of(DynamicArray array, void *item, size_t
+// element_size);
+static inline ssize_t _dynamic_array_index_of(DynamicArray array, void *item,
+                                              size_t element_size) {
+  for (size_t i = 0; i < array.count; ++i) {
+    if (memcmp(dynamic_array_at(array, i), (char *)item, element_size) == 0) {
+      return i;
+    }
+  }
+  return -1;
+}
 
 #endif // _DYNAMICARRAY_H
 #undef DYNAMIC_ARRAY_API
