@@ -83,30 +83,27 @@ DYNAMIC_ARRAY_API ssize_t _dynamic_array_index_of(DynamicArray array,
                                                   void *item,
                                                   comparer comparer);
 
-#define CAST(value,TO) *(TO*)(&value)
+#define CAST(value, TO) *(TO *)(&value)
 
 #define dynamic_array_foreach(type, val, array)                                \
   for (size_t _i = 0, _len = (array).count; _i < _len;)                        \
-    for (type val = *(type*)dynamic_array_at(array, _i); _i < _len;                   \
-         val = *(type*)dynamic_array_at(array, ++_i))
+    for (type val = *(type *)dynamic_array_at(array, _i); _i < _len;           \
+         val = *(type *)dynamic_array_at(array, ++_i))
 
+#define dynamic_array_for(index, array)                                        \
+  for (size_t index = 0, _len = (array).count; index < _len; ++index)
 
-#define dynamic_array_at(array, index) _dynamic_array_at(CAST(array, DynamicArray), index)
-#define dynamic_array_empty(array) _dynamic_array_empty(CAST(array, DynamicArray))
+#define dynamic_array_at(array, index) ((array).items + index)
 
-#define dynamic_array_contains(array, item, cmp)                          \
+#define dynamic_array_empty(array) (array.count == 0)
+
+#define dynamic_array_contains(array, item, cmp)                               \
   (_dynamic_array_index_of(CAST(array, DynamicArray), (void *)&(item),         \
                            (comparer)cmp) != -1)
 
 #endif // _DYNAMICARRAY_H
 
 #ifdef DYNAMIC_ARRAY_IMPLEMENTATION
-
-void *_dynamic_array_at(DynamicArray array, size_t index) {
-  return array.items + index;
-}
-
-bool _dynamic_array_empty(DynamicArray array) { return array.count == 0; }
 
 ssize_t _dynamic_array_index_of(DynamicArray array, void *item,
                                 comparer comparer) {

@@ -6,6 +6,7 @@
 #define ARRAY_LENGTH(ARRAY) sizeof(ARRAY) / sizeof(ARRAY[0])
 #define ARRAY_LITERAL(type, ...) ((type[]){__VA_ARGS__})
 #define ARGS_LENGTH(type, ...) (sizeof((type[]){__VA_ARGS__}) / sizeof(type))
+#define UNPACK_ARRAY(ARRAY) ARRAY, ARRAY_LENGTH(ARRAY)
 
 #define CONCAT_(A, B) A##B
 #define CONCAT2(A, B) CONCAT_(A, B)

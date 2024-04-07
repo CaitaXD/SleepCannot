@@ -1,3 +1,5 @@
+#ifndef SOCKET_H_
+#define SOCKET_H_
 
 #include "../DataStructures/str.h"
 #include <arpa/inet.h>
@@ -25,7 +27,6 @@ typedef struct Socket {
   int protocol;
 } Socket;
 
-
 // Create a internet protocol endpoint with a specific address and port
 EndPoint ip_endpoint(in_addr_t address, int port);
 // Compare two endpoints by their address
@@ -46,6 +47,7 @@ ssize_t socket_receive_endpoint(Socket *s, Str buffer, EndPoint *ep, int flags);
 #define ERROR_SOCKET_SEND -3
 #define ERROR_SOCKET_RECEIVE -4
 
+#endif // SOCKET_H_
 #ifdef SOCKET_IMPLEMENTATION
 
 EndPoint ip_endpoint(in_addr_t address, int port) {

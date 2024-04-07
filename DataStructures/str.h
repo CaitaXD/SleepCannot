@@ -3,13 +3,15 @@
 
 #include "../macros.h"
 #include <assert.h>
+#include <ctype.h>
 #include <malloc.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 
 typedef struct Str {
-  const char *data;
+  char *data;
   const size_t len;
 } Str;
 
@@ -24,7 +26,7 @@ const char *str_to_cstr(Str s);
 #define str_unpack(s) (s).data, (s).len
 
 #define str_fmt "%.*s"
-#define str_args(s) (int)((s).len), s.data
+#define str_args(s) (int)((s).len), (s).data
 
 #define str_foreach(V, S)                                                      \
   for (size_t __it = 0, __end = S.len; __it < __end;)                          \
@@ -33,9 +35,12 @@ const char *str_to_cstr(Str s);
 Str str_slice(Str s, ssize_t offset, ssize_t count);
 Str str_skip(Str s, ssize_t count);
 Str str_take(Str s, ssize_t count);
+Str str_trim(Str s);
 int str_cmp(Str a, Str b);
 int str_index_of(Str s, Str sub);
 int str_last_index_of(Str s, Str sub);
+bool str_starts_with(Str s, Str prefix);
+void println(Str s);
 
 #endif // STR_H_
 
@@ -100,6 +105,7 @@ int str_index_of(Str s, Str sub) {
   }
   return -1;
 }
+
 int str_last_index_of(Str s, Str sub) {
   if (sub.len == 0) {
     return s.len;
@@ -114,5 +120,28 @@ int str_last_index_of(Str s, Str sub) {
   }
   return -1;
 }
+
+bool str_starts_with(Str s, Str prefix) {
+  if (prefix.len > s.len) {
+    return false;
+  }
+  return memcmp(s.data, prefix.data, prefix.len) == 0;
+}
+
+Str str_trim(Str s) {
+  char *data = (char *)s.data;
+  size_t len = s.len;
+
+  while (len > 0 && isspace(data[0])) {
+    data++;
+    len--;
+  }
+  while (len > 0 && isspace(data[len - 1])) {
+    len--;
+  }
+  return (Str){.data = data, .len = len};
+}
+
+void println(Str s) { printf(str_fmt "\n", str_args(s)); }
 
 #endif // STR_IMPLEMENTATION
