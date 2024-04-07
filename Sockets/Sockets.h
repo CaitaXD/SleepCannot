@@ -28,6 +28,8 @@ typedef struct Socket {
 
 // Create a internet protocol endpoint with a specific address and port
 EndPoint ip_endpoint(in_addr_t address, int port);
+// Compare two endpoints by their address
+int epcmp_inaddr(EndPoint *a, EndPoint *b);
 // Create a new socket with a specific domain, type and protocol
 Socket socket_create(sa_family_t domain, int type, int protocol);
 // Bind a socket to a specific endpoint
@@ -44,7 +46,6 @@ ssize_t socket_receive_endpoint(Socket *s, Str buffer, EndPoint *ep, int flags);
 #define ERROR_SOCKET_SEND -3
 #define ERROR_SOCKET_RECEIVE -4
 
-#define SOCKET_IMPLEMENTATION
 #ifdef SOCKET_IMPLEMENTATION
 
 EndPoint ip_endpoint(in_addr_t address, int port) {
@@ -118,6 +119,13 @@ ssize_t socket_receive_endpoint(Socket *s, Str buffer, EndPoint *ep,
   }
 
   return n;
+}
+
+int epcmp_inaddr(EndPoint *a, EndPoint *b) {
+  struct sockaddr_in *a_in = (struct sockaddr_in *)&a->addr;
+  struct sockaddr_in *b_in = (struct sockaddr_in *)&b->addr;
+
+  return a_in->sin_addr.s_addr - b_in->sin_addr.s_addr;
 }
 
 #endif // SOCKET_IMPLEMENTATION

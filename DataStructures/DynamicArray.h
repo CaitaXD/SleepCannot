@@ -28,6 +28,9 @@
     size_t capacity;                                                           \
   }
 
+typedef DynamicArray(uint8_t) DynamicArray;
+typedef int (*comparer)(void *lhs, void *rhs);
+
 #define dynamic_array_from(array)                                              \
   {                                                                            \
     .items = array, .count = ARRAY_LENGTH(array),                              \
@@ -72,31 +75,47 @@
   (DYNAMIC_FREE((array).items), (array).items = NULL, (array).count = 0,       \
    (array).capacity = 0)
 
-#define dynamic_array_at(array, index) ((array).items + (index))
+DYNAMIC_ARRAY_API void *_dynamic_array_at(DynamicArray array, size_t index);
 
-#define dynamic_array_empty(array) ((array).count == 0)
+DYNAMIC_ARRAY_API bool _dynamic_array_empty(DynamicArray array);
+
+DYNAMIC_ARRAY_API ssize_t _dynamic_array_index_of(DynamicArray array,
+                                                  void *item,
+                                                  comparer comparer);
+
+#define CAST(value,TO) *(TO*)(&value)
 
 #define dynamic_array_foreach(type, val, array)                                \
-  for (size_t _i = 0, _len = (array).count; _i < _len;)                         \
-         for(type val = *dynamic_array_at(array, _i); _i < _len; val = * dynamic_array_at(array, ++_i))
+  for (size_t _i = 0, _len = (array).count; _i < _len;)                        \
+    for (type val = *(type*)dynamic_array_at(array, _i); _i < _len;                   \
+         val = *(type*)dynamic_array_at(array, ++_i))
 
-typedef DynamicArray(uint8_t) DynamicArray;
 
-#define dynamic_array_contains(array, item)                                    \
-  (_dynamic_array_index_of(*(DynamicArray *)&(array), (void *)&(item),         \
-                           sizeof(item)) != -1)
+#define dynamic_array_at(array, index) _dynamic_array_at(CAST(array, DynamicArray), index)
+#define dynamic_array_empty(array) _dynamic_array_empty(CAST(array, DynamicArray))
 
-// ssize_t _dynamic_array_index_of(DynamicArray array, void *item, size_t
-// element_size);
-static inline ssize_t _dynamic_array_index_of(DynamicArray array, void *item,
-                                              size_t element_size) {
+#define dynamic_array_contains(array, item, cmp)                          \
+  (_dynamic_array_index_of(CAST(array, DynamicArray), (void *)&(item),         \
+                           (comparer)cmp) != -1)
+
+#endif // _DYNAMICARRAY_H
+
+#ifdef DYNAMIC_ARRAY_IMPLEMENTATION
+
+void *_dynamic_array_at(DynamicArray array, size_t index) {
+  return array.items + index;
+}
+
+bool _dynamic_array_empty(DynamicArray array) { return array.count == 0; }
+
+ssize_t _dynamic_array_index_of(DynamicArray array, void *item,
+                                comparer comparer) {
   for (size_t i = 0; i < array.count; ++i) {
-    if (memcmp(dynamic_array_at(array, i), (char *)item, element_size) == 0) {
+    if (comparer(dynamic_array_at(array, i), item) == 0) {
       return i;
     }
   }
   return -1;
 }
 
-#endif // _DYNAMICARRAY_H
-#undef DYNAMIC_ARRAY_API
+#endif // DYNAMIC_ARRAY_IMPLEMENTATION
