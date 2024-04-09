@@ -1,1 +1,1 @@
-gcc --debug -Wall -Wextra main.c -IDataStructures -o main
+gcc --debug -Wall -Wextra main.c -IDataStructures -I/. -lm -o main

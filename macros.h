@@ -1,6 +1,7 @@
 #ifndef MACROS_H_
 #define MACROS_H_
 
+#include <stdint.h>
 #define NOMINMAX
 
 #define ARRAY_LENGTH(ARRAY) sizeof(ARRAY) / sizeof(ARRAY[0])
@@ -17,5 +18,10 @@
 #define MIN(A, B) ((A) < (B) ? (A) : (B))
 #define MAX(A, B) ((A) > (B) ? (A) : (B))
 #define CLAMP(X, MIN, MAX) ((X) < (MIN) ? (MIN) : ((X) > (MAX) ? (MAX) : (X)))
+
+#define Ref(X) ((typeof(X)[1]){X})
+
+typedef int (*comparer)(void *lhs, void *rhs);
+typedef uint32_t (*hashfn)(void *value);
 
 #endif // MACROS_H_
