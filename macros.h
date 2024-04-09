@@ -9,6 +9,8 @@
 #define ARGS_LENGTH(type, ...) (sizeof((type[]){__VA_ARGS__}) / sizeof(type))
 #define UNPACK_ARRAY(ARRAY) ARRAY, ARRAY_LENGTH(ARRAY)
 
+#define SCOPE(VAR) for (VAR, *_once = NULL + 1; _once; _once = NULL)
+
 #define CONCAT_(A, B) A##B
 #define CONCAT2(A, B) CONCAT_(A, B)
 #define CONCAT3(A, B, C) CONCAT2(CONCAT2(A, B), C)

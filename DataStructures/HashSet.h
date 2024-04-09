@@ -16,9 +16,9 @@
 
 #if !defined(ALLOC) && !defined(FREE) && !defined(REALLOC)
 #include <malloc.h>
-#define HASH_ALLOC malloc
-#define HASH_FREE free
-#define HASH_REALLOC realloc
+#define HS_ALLOC malloc
+#define HS_FREE free
+#define HS_REALLOC realloc
 #elif !defined(ALLOC) || !defined(FREE) || !defined(REALLOC)
 #error "You must define all or none of ALLOC, FREE, REALLOC"
 #endif
@@ -53,7 +53,7 @@ typedef struct HashSet {
       struct {                                                                 \
         Entry entry;                                                           \
         type value;                                                            \
-      } *entries;                                                              \
+      } * entries;                                                             \
     };                                                                         \
   }
 
@@ -62,6 +62,9 @@ typedef struct HashSet {
     key __key;                                                                 \
     value __value;                                                             \
   })
+
+#define HS_ITEM_TYPE(set) typeof((set).entries->value)
+#define HS_ITEM_SIZE(set) sizeof(HS_ITEM_TYPE(set))
 
 extern int primes_lut[];
 extern size_t primes_len;
@@ -106,20 +109,21 @@ typedef struct HashSetIterator {
     .base = { &set.base, 0 }                                                   \
   }
 
+#define HS_ITERATOR_TYPE(set) typeof(HashSetIterator(HS_ITEM_TYPE(set)))
+
 bool hash_set_iterator_next(HashSetIterator *iter, void *out_current,
                             size_t element_size);
 
 #define hash_set_iterator_next(iter)                                           \
   (hash_set_iterator_next)(&iter.base, (void *)&iter.current,                  \
-                           sizeof(typeof(iter.hash_set->entries->value)))
+                           HS_ITEM_SIZE(*iter.hash_set))
 
-#define hash_set_foreach(val, set)                                             \
-  for (typeof(HashSetIterator(typeof(set.entries->value))) iter =              \
-           HashSetGetIterator(set);                                            \
-       iter.index == 0;)                                                       \
-    for (typeof(set.entries->value) val =                                      \
-             (hash_set_iterator_next(iter), iter.current);                     \
-         hash_set_iterator_next(iter); val = iter.current)
+#define hash_set_iterator_current(iter) (iter).current
+
+#define hash_set_foreach(val, hset)                                            \
+  SCOPE(HS_ITERATOR_TYPE(hset) it = HashSetGetIterator(hset))            \
+  while (hash_set_iterator_next(it))                                         \
+  SCOPE(HS_ITEM_TYPE(hset) val = hash_set_iterator_current(it))
 
 #endif // HashSet_H_
 
@@ -139,7 +143,7 @@ int primes_lut[] = {
     2009191, 2411033, 2893249, 3471899, 4166287, 4999559, 5999471, 7199369};
 
 size_t primes_len = (sizeof(primes_lut) / sizeof(primes_lut[0]));
-const int HASH_PRIME = 101;
+const int HS_PRIME = 101;
 
 bool is_prime(ssize_t candidate) {
   if ((candidate & 1) != 0) {
@@ -163,7 +167,7 @@ int get_prime(ssize_t min) {
   }
 
   for (ssize_t i = (min | 1); i < SSIZE_MAX; i += 2) {
-    if (is_prime(i) && ((i - 1) % HASH_PRIME != 0))
+    if (is_prime(i) && ((i - 1) % HS_PRIME != 0))
       return i;
   }
   return min;
@@ -205,13 +209,13 @@ void(hash_set_init)(HashSet *hash_set, size_t element_size, size_t size_hint) {
   hash_set->size = size;
 
   size_t buckets_in_bytes = size * sizeof(ssize_t);
-  hash_set->buckets = (ssize_t *)HASH_ALLOC(buckets_in_bytes);
+  hash_set->buckets = (ssize_t *)HS_ALLOC(buckets_in_bytes);
   assert(hash_set->buckets && "out of memory");
   memset(hash_set->buckets, 0, buckets_in_bytes);
 
   size_t aligned_size = ENTRY_SIZE(element_size);
   size_t entires_in_bytes = (size * aligned_size);
-  hash_set->entries = (Entry *)HASH_ALLOC(entires_in_bytes);
+  hash_set->entries = (Entry *)HS_ALLOC(entires_in_bytes);
   assert(hash_set->entries && "out of memory");
   memset(hash_set->entries, 0, entires_in_bytes);
 
@@ -226,7 +230,7 @@ void(hash_set_resize)(HashSet *hash_set, size_t size, size_t element_size,
   size_t aligned_size = ENTRY_SIZE(element_size);
   size_t old_size = hash_set->size * aligned_size;
   size_t new_size = size * aligned_size;
-  intptr_t entries = (intptr_t)HASH_REALLOC(hash_set->entries, new_size);
+  intptr_t entries = (intptr_t)HS_REALLOC(hash_set->entries, new_size);
   memset((void *)(entries + old_size), 0, new_size - old_size);
 
   hash_set->entries = (Entry *)entries;
@@ -246,7 +250,7 @@ void(hash_set_resize)(HashSet *hash_set, size_t size, size_t element_size,
     }
   }
 
-  hash_set->buckets = (ssize_t *)HASH_ALLOC(size * sizeof(ssize_t));
+  hash_set->buckets = (ssize_t *)HS_ALLOC(size * sizeof(ssize_t));
   for (ssize_t i = 0; i < count; ++i) {
     Entry *entry = _entry_at(hash_set, element_size, i);
     if (entry->next >= -1) {

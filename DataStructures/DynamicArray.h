@@ -10,9 +10,9 @@
 #include <sys/types.h>
 
 #if !defined(ALLOC) && !defined(FREE) && !defined(REALLOC)
-#define HASH_ALLOC malloc
-#define HASH_FREE free
-#define HASH_REALLOC realloc
+#define DYN_ALLOC malloc
+#define DYN_FREE free
+#define DYN_REALLOC realloc
 #elif !defined(ALLOC) || !defined(FREE) || !defined(REALLOC)
 #error "You must define all or none of ALLOC, FREE, REALLOC"
 #endif
@@ -32,6 +32,8 @@ typedef struct DynamicArray {
       size_t capacity;                                                         \
     };                                                                         \
   }
+
+#define DYN_ITEM_TYPE(arr) typeof((arr).items[0])
 
 #define dynamic_array_from(array)                                              \
   {                                                                            \
@@ -62,7 +64,7 @@ ssize_t _dynamic_array_index_of(DynamicArray array, void *item,
   if ((min) > (array).capacity) {                                              \
     size_t new_capacity = (array).capacity = calculate_new_capacity(array);    \
     size_t new_size = new_capacity * element_size(array);                      \
-    (array).items = HASH_REALLOC((array).items, new_size);                     \
+    (array).items = DYN_REALLOC((array).items, new_size);                      \
     assert((array).items && "out of memory");                                  \
   }
 
@@ -77,7 +79,7 @@ ssize_t _dynamic_array_index_of(DynamicArray array, void *item,
 #define dynamic_array_clear(array) ((array).count = 0)
 
 #define dynamic_array_free(array)                                              \
-  (HASH_FREE((array).items), (array).items = NULL, (array).count = 0,          \
+  (DYN_FREE((array).items), (array).items = NULL, (array).count = 0,           \
    (array).capacity = 0)
 
 #define CAST(value, TO) *(TO *)(&value)
@@ -112,20 +114,18 @@ typedef struct DynamicArrayIterator {
     .base = {.index = -1, .array = &array.base }                               \
   }
 
+#define DYN_ITERATOR_TPYE(arr) typeof(DynamicArrayIterator(DYN_ITEM_TYPE(arr)))
+
 #define dynamic_array_iterator_next(iterator)                                  \
-  (++(iterator)->index < (iterator)->array->count)
+  ++(iterator).index < (iterator).array->count
 
 #define dynamic_array_iterator_current(iterator)                               \
-  ((iterator).array->items[(iterator).index])
+  (iterator).array->items[(iterator).index]
 
-#define dynamic_array_foreach(val, darray)                                     \
-  for (typeof(DynamicArrayIterator(typeof(darray.items[0]))) it =              \
-           DynamicArrayGetIterator(darray);                                    \
-       it.index == -1;)                                                        \
-    for (typeof(darray.items[0]) val = (dynamic_array_iterator_next(&it),      \
-                                        dynamic_array_iterator_current(it));   \
-         dynamic_array_iterator_next(&it);                                     \
-         val = dynamic_array_iterator_current(it))
+#define dynamic_array_foreach(val, arr)                                        \
+  SCOPE(DYN_ITERATOR_TPYE(arr) it = DynamicArrayGetIterator(arr))          \
+  while (dynamic_array_iterator_next(it))                                      \
+  SCOPE(DYN_ITEM_TYPE(arr) val = dynamic_array_iterator_current(it))
 
 #endif // _DYNAMICARRAY_H
 

@@ -63,14 +63,17 @@ int main() {
   //   entry = _entry_at((HashSet *)(&set), sizeof(int), ++i);
   // }
 
+  printf("HashSet Explicit iterator\n");
   typeof(HashSetIterator(int)) iter = HashSetGetIterator(set);
   while (hash_set_iterator_next(iter)) {
     printf("%d, ", iter.current);
   }
   printf("\n");
 
-  hash_set_foreach(i32, set) { printf("%d ", i32); }
+  printf("HashSet Implicit iterator\n");
+  hash_set_foreach(i32, set) { printf("%d, ", i32); }
   printf("\n");
+
 
   typeof(DynamicArray(int)) array = {};
   dynamic_array_push(array, 0);
@@ -85,14 +88,15 @@ int main() {
   dynamic_array_push(array, 9);
   dynamic_array_push(array, 10);
 
+  printf("DynamicArray Explicit iterator\n");
   typeof(DynamicArrayIterator(int)) da_iter = DynamicArrayGetIterator(array);
-
-  while (dynamic_array_iterator_next(&da_iter)) {
+  while (dynamic_array_iterator_next(da_iter)) {
     printf("%d, ", dynamic_array_iterator_current(da_iter));
   }
   printf("\n");
 
-  dynamic_array_foreach(i32, array) { printf("%d ", i32); }
+  printf("DynamicArray Implicit iterator\n");
+  dynamic_array_foreach(i32, array) { printf("%d, ", i32); }
   printf("\n");
 
   return 0;

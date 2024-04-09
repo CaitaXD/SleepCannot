@@ -16,7 +16,7 @@ typedef struct Object {
 
 typedef enum ObjectMethodHandle {
   TO_STRING,
-  HASH_CODE,
+  HS_CODE,
   METHOD_COUNT,
 } ObjectMethodHandle;
 
@@ -54,13 +54,13 @@ Str to_string(Object *obj) {
 }
 
 unsigned int hash_code(Object *obj) {
-  void *method = obj->vtbl[HASH_CODE];
+  void *method = obj->vtbl[HS_CODE];
   return ((unsigned int (*)(Object *))method)(obj);
 }
 
 void *ObjectVtbl[METHOD_COUNT] = {
     [TO_STRING] = (void *)object_to_string,
-    [HASH_CODE] = (void *)object_hash_code,
+    [HS_CODE] = (void *)object_hash_code,
 };
 
 ObjectMethods *Methods = (ObjectMethods *)ObjectVtbl;
