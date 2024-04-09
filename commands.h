@@ -17,9 +17,7 @@ typedef struct {
   char mac_str[MAC_STR_MAX];
 } MacAddress;
 
-typedef struct ClientsDinamicArray {
-  DynamicArray(EndPoint);
-} Clients;
+typedef DynamicArray(EndPoint) Clients;
 
 #define Clients() ((Clients){})
 

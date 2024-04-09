@@ -10,6 +10,10 @@
 #define UNPACK_ARRAY(ARRAY) ARRAY, ARRAY_LENGTH(ARRAY)
 
 #define SCOPE(VAR) for (VAR, *_once = NULL + 1; _once; _once = NULL)
+#define STATEMENT(...)                                                         \
+  do {                                                                         \
+    __VA_ARGS__                                                                \
+  } while (0)
 
 #define CONCAT_(A, B) A##B
 #define CONCAT2(A, B) CONCAT_(A, B)

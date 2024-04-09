@@ -40,7 +40,7 @@ typedef struct HashSet {
 } HashSet;
 
 #define HashSet(type)                                                          \
-  union {                                                                      \
+  typeof(union {                                                               \
     HashSet base;                                                              \
     struct {                                                                   \
       ssize_t *buckets;                                                        \
@@ -55,16 +55,21 @@ typedef struct HashSet {
         type value;                                                            \
       } * entries;                                                             \
     };                                                                         \
-  }
-
-#define HashTable(key, value)                                                  \
-  HashSet(struct {                                                             \
-    key __key;                                                                 \
-    value __value;                                                             \
   })
+
+#define KeyValuePair(Key, Value)                                               \
+  typeof(struct {                                                              \
+    Key key;                                                                   \
+    Value value;                                                               \
+  })
+
+#define HashTable(key, value) HashSet(KeyValuePair(key, value))
 
 #define HS_ITEM_TYPE(set) typeof((set).entries->value)
 #define HS_ITEM_SIZE(set) sizeof(HS_ITEM_TYPE(set))
+#define HT_KEY_TYPE(set) typeof((set).entries->value.key)
+#define HT_VALUE_TYPE(set) typeof((set).entries->value.value)
+#define HT_KVP_TYPE(set) KeyValuePair(HT_KEY_TYPE(set), HT_VALUE_TYPE(set))
 
 extern int primes_lut[];
 extern size_t primes_len;
@@ -76,6 +81,10 @@ void hash_set_init(HashSet *hash_set, size_t element_size, size_t size_hint);
 
 #define hash_set_add(hash_set, value)                                          \
   (hash_set_add)(&hash_set.base, (void *)Ref(value), sizeof(typeof(value)))
+
+#define hash_table_add(hash_map, key, value)                                   \
+  STATEMENT(HT_KVP_TYPE(hash_map) _pair = {key, value};                        \
+            hash_set_add(hash_map, _pair);)
 
 #define hash_set_init(hash_set)                                                \
   (hash_set_init)(&hash_set.base, sizeof(typeof(hash_set.items[0])),           \
@@ -95,14 +104,14 @@ typedef struct HashSetIterator {
 } HashSetIterator;
 
 #define HashSetIterator(type)                                                  \
-  union {                                                                      \
+  typeof(union {                                                               \
     HashSetIterator base;                                                      \
     struct {                                                                   \
       HashSet(type) *const hash_set;                                           \
       size_t index;                                                            \
       type current;                                                            \
     };                                                                         \
-  }
+  })
 
 #define HashSetGetIterator(set)                                                \
   {                                                                            \
@@ -121,12 +130,13 @@ bool hash_set_iterator_next(HashSetIterator *iter, void *out_current,
 #define hash_set_iterator_current(iter) (iter).current
 
 #define hash_set_foreach(val, hset)                                            \
-  SCOPE(HS_ITERATOR_TYPE(hset) it = HashSetGetIterator(hset))            \
-  while (hash_set_iterator_next(it))                                         \
+  SCOPE(HS_ITERATOR_TYPE(hset) it = HashSetGetIterator(hset))                  \
+  while (hash_set_iterator_next(it))                                           \
   SCOPE(HS_ITEM_TYPE(hset) val = hash_set_iterator_current(it))
 
 #endif // HashSet_H_
 
+#define HASH_SET_IMPLEMENTATION
 #ifdef HASH_SET_IMPLEMENTATION
 
 const int MAX_PRIME_ARRAY_LENGTH = 0x7FEFFFFD;

@@ -24,14 +24,14 @@ typedef struct DynamicArray {
 } DynamicArray;
 
 #define DynamicArray(type)                                                     \
-  union {                                                                      \
+  typeof(union {                                                               \
     DynamicArray base;                                                         \
     struct {                                                                   \
       type *items;                                                             \
       size_t count;                                                            \
       size_t capacity;                                                         \
     };                                                                         \
-  }
+  })
 
 #define DYN_ITEM_TYPE(arr) typeof((arr).items[0])
 
@@ -40,11 +40,6 @@ typedef struct DynamicArray {
     .items = array, .count = ARRAY_LENGTH(array),                              \
     .capacity = ARRAY_LENGTH(array)                                            \
   }
-
-#define STATEMENT(MACRO)                                                       \
-  do {                                                                         \
-    MACRO                                                                      \
-  } while (0)
 
 #define calculate_new_capacity(array)                                          \
   (((array).capacity == 0) ? 2 : ((array).capacity) * 2)
@@ -101,13 +96,13 @@ typedef struct DynamicArrayIterator {
 } DynamicArrayIterator;
 
 #define DynamicArrayIterator(type)                                             \
-  union {                                                                      \
+  typeof(union {                                                               \
     DynamicArrayIterator base;                                                 \
     struct {                                                                   \
       size_t index;                                                            \
       DynamicArray(type) *const array;                                         \
     };                                                                         \
-  }
+  })
 
 #define DynamicArrayGetIterator(array)                                         \
   {                                                                            \
@@ -123,7 +118,7 @@ typedef struct DynamicArrayIterator {
   (iterator).array->items[(iterator).index]
 
 #define dynamic_array_foreach(val, arr)                                        \
-  SCOPE(DYN_ITERATOR_TPYE(arr) it = DynamicArrayGetIterator(arr))          \
+  SCOPE(DYN_ITERATOR_TPYE(arr) it = DynamicArrayGetIterator(arr))              \
   while (dynamic_array_iterator_next(it))                                      \
   SCOPE(DYN_ITEM_TYPE(arr) val = dynamic_array_iterator_current(it))
 
