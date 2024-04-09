@@ -2,6 +2,7 @@
 #define MACROS_H_
 
 #include <stdint.h>
+#include <stdbool.h>
 #define NOMINMAX
 
 #define ARRAY_LENGTH(ARRAY) sizeof(ARRAY) / sizeof(ARRAY[0])
@@ -27,6 +28,7 @@
 
 #define Ref(X) ((typeof(X)[1]){X})
 
+typedef bool (*eq)(void *lhs, void *rhs);
 typedef int (*comparer)(void *lhs, void *rhs);
 typedef uint32_t (*hashfn)(void *value);
 

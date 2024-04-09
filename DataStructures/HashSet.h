@@ -35,7 +35,7 @@ typedef struct HashSet {
   ssize_t free_list;
   ssize_t free_count;
   hashfn hash;
-  comparer compare;
+  eq equals;
   Entry *entries;
 } HashSet;
 
@@ -49,7 +49,7 @@ typedef struct HashSet {
       ssize_t free_list;                                                       \
       ssize_t free_count;                                                      \
       hashfn hash;                                                             \
-      comparer compare;                                                        \
+      eq equals;                                                           \
       struct {                                                                 \
         Entry entry;                                                           \
         type value;                                                            \
@@ -247,7 +247,7 @@ void(hash_set_resize)(HashSet *hash_set, size_t size, size_t element_size,
   hash_set->size = size;
   ssize_t count = hash_set->count;
   if (force_rehash) {
-    comparer cmp = hash_set->compare;
+    eq eq = hash_set->equals;
     hashfn hash = hash_set->hash;
     for (ssize_t i = 0; i < count; ++i) {
       Entry *entry = _entry_at(hash_set, element_size, i);
@@ -280,7 +280,7 @@ bool(hash_set_add)(HashSet *hash_set, void *value, size_t element_size) {
   size_t size = hash_set->size;
   Entry *entries = hash_set->entries;
   hashfn hash = hash_set->hash;
-  comparer cmp = hash_set->compare;
+  eq eq = hash_set->equals;
   uint32_t collisions = 0;
   uint32_t hash_code = value ? hash(value) : 0;
   ssize_t *bucket = hash_set->buckets + (hash_code % size);
@@ -290,7 +290,7 @@ bool(hash_set_add)(HashSet *hash_set, void *value, size_t element_size) {
     Entry *entry = _entry_at(hash_set, element_size, i);
     void *entry_value = _entry_value(entry);
     bool hash_equals = entry->hash_code == hash_code;
-    bool val_equals = cmp(entry_value, value) == 0;
+    bool val_equals = eq(entry_value, value);
     if (hash_equals && val_equals) {
       out_location = i;
       return false;

@@ -1,7 +1,8 @@
 #ifndef OBJECT_H_
 #define OBJECT_H_
 
-#include "str.h"
+#include "DataStructures/str.h"
+#include <stdint.h>
 #include <stdint.h>
 
 typedef struct Object {
@@ -16,23 +17,26 @@ typedef struct Object {
 
 typedef enum ObjectMethodHandle {
   TO_STRING,
-  HS_CODE,
+  EQUALS,
+  HASH_CODE,
   METHOD_COUNT,
 } ObjectMethodHandle;
 
 typedef struct ObjectVTable {
   Str (*to_string)(Object *obj);
-  unsigned int (*hash_code)(Object *obj);
+  bool (*equals)(Object *lhs, Object *rhs);
+  uint32_t (*hash_code)(Object *obj);
 } ObjectMethods;
 
 extern void *ObjectVtbl[METHOD_COUNT];
 extern ObjectMethods *Methods;
 
 Str to_string(Object *obj);
-unsigned int hash_code(Object *obj);
+uint32_t hash_code(Object *obj);
 
 #endif // OBJECT_H_
 
+#define OBJECT_IMPLEMENTATION
 #ifdef OBJECT_IMPLEMENTATION
 
 static inline Str object_to_string(Object *obj) {
@@ -40,7 +44,11 @@ static inline Str object_to_string(Object *obj) {
   return STR("[Object object]");
 }
 
-static inline unsigned int object_hash_code(Object *obj) {
+static inline bool object_equals(Object *lhs, Object *rhs) {
+  return lhs == rhs;
+}
+
+static inline uint32_t object_hash_code(Object *obj) {
   unsigned int hash = 17;
   for (size_t i = 0; i < sizeof(void *); i++) {
     hash += ((uint8_t *)obj)[i] * 31;
@@ -53,14 +61,19 @@ Str to_string(Object *obj) {
   return ((Str(*)(Object *))method)(obj);
 }
 
-unsigned int hash_code(Object *obj) {
-  void *method = obj->vtbl[HS_CODE];
+bool equals(Object *lhs, Object *rhs) {
+  void *method = lhs->vtbl[EQUALS];
+  return ((bool (*)(Object *, Object *))method)(lhs, rhs);
+}
+
+uint32_t hash_code(Object *obj) {
+  void *method = obj->vtbl[HASH_CODE];
   return ((unsigned int (*)(Object *))method)(obj);
 }
 
 void *ObjectVtbl[METHOD_COUNT] = {
     [TO_STRING] = (void *)object_to_string,
-    [HS_CODE] = (void *)object_hash_code,
+    [HASH_CODE] = (void *)object_hash_code,
 };
 
 ObjectMethods *Methods = (ObjectMethods *)ObjectVtbl;
