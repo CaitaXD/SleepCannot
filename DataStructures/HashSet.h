@@ -49,7 +49,7 @@ typedef struct HashSet {
       ssize_t free_list;                                                       \
       ssize_t free_count;                                                      \
       hashfn hash;                                                             \
-      eq equals;                                                           \
+      eq equals;                                                               \
       struct {                                                                 \
         Entry entry;                                                           \
         type value;                                                            \
@@ -70,6 +70,7 @@ typedef struct HashSet {
 #define HT_KEY_TYPE(set) typeof((set).entries->value.key)
 #define HT_VALUE_TYPE(set) typeof((set).entries->value.value)
 #define HT_KVP_TYPE(set) KeyValuePair(HT_KEY_TYPE(set), HT_VALUE_TYPE(set))
+#define HS_ENTRY_VALUE(set) (set).entries->value
 
 extern int primes_lut[];
 extern size_t primes_len;
@@ -79,8 +80,11 @@ void hash_set_resize(HashSet *hash_set, size_t size, size_t element_size,
                      bool force_rehash);
 void hash_set_init(HashSet *hash_set, size_t element_size, size_t size_hint);
 
+#define HS_TYPE_ASSERT(set, value) ASSERT_TYPE(value, HS_ENTRY_VALUE(set))
+
 #define hash_set_add(hash_set, value)                                          \
-  (hash_set_add)(&hash_set.base, (void *)Ref(value), sizeof(typeof(value)))
+  (HS_TYPE_ASSERT(hash_set, value),                                                 \
+   (hash_set_add)(&hash_set.base, Ref((void *)value), HS_ITEM_SIZE(hash_set)))
 
 #define hash_table_add(hash_map, key, value)                                   \
   STATEMENT(HT_KVP_TYPE(hash_map) _pair = {key, value};                        \

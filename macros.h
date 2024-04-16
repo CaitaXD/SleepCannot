@@ -1,8 +1,11 @@
 #ifndef MACROS_H_
 #define MACROS_H_
 
-#include <stdint.h>
+#include <assert.h>
 #include <stdbool.h>
+#include <stdint.h>
+
+
 #define NOMINMAX
 
 #define ARRAY_LENGTH(ARRAY) sizeof(ARRAY) / sizeof(ARRAY[0])
@@ -25,6 +28,9 @@
 #define MIN(A, B) ((A) < (B) ? (A) : (B))
 #define MAX(A, B) ((A) > (B) ? (A) : (B))
 #define CLAMP(X, MIN, MAX) ((X) < (MIN) ? (MIN) : ((X) > (MAX) ? (MAX) : (X)))
+
+#define IS_SAME_TYPE(X, Y) (_Generic((X), typeof(Y) : 1, default : 0))
+#define ASSERT_TYPE(X, Y) (assert(IS_SAME_TYPE(X, Y) && "Type Missmatch"))
 
 #define Ref(X) ((typeof(X)[1]){X})
 

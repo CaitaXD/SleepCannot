@@ -36,19 +36,18 @@ uint32_t hash_code(Object *obj);
 
 #endif // OBJECT_H_
 
-#define OBJECT_IMPLEMENTATION
 #ifdef OBJECT_IMPLEMENTATION
 
-static inline Str object_to_string(Object *obj) {
+Str object_to_string(Object *obj) {
   (void)(obj);
   return STR("[Object object]");
 }
 
-static inline bool object_equals(Object *lhs, Object *rhs) {
+bool object_equals(Object *lhs, Object *rhs) {
   return lhs == rhs;
 }
 
-static inline uint32_t object_hash_code(Object *obj) {
+uint32_t object_hash_code(Object *obj) {
   unsigned int hash = 17;
   for (size_t i = 0; i < sizeof(void *); i++) {
     hash += ((uint8_t *)obj)[i] * 31;
