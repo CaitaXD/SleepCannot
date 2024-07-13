@@ -50,6 +50,8 @@ int server() {
   help_msg(NULL);
 
   Socket s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  int broadcastEnable=1;
+  int ret=setsockopt(s.fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
   EndPoint ep = ip_broadcast(PORT);
   socket_bind(&s, ep);
 
@@ -102,7 +104,6 @@ int client() {
   }
 
   EndPoint ep = ip_broadcast(PORT);
-
   Str buffer = STR((char[MAXLINE]){});
   ssize_t result = socket_send_endpoint(&s, client_msg, &ep, 0);
   if(result < 0) {
