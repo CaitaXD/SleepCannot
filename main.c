@@ -50,7 +50,7 @@ int server() {
   help_msg(NULL);
 
   Socket s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-  EndPoint ep = ip_endpoint(INADDR_ANY, PORT);
+  EndPoint ep = ip_broadcast(PORT);
   socket_bind(&s, ep);
 
   if (s.error) {
@@ -94,10 +94,14 @@ finally:
 
 int client() {
   Socket s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-  EndPoint ep = ip_endpoint(INADDR_ANY, PORT);
+  EndPoint ep = ip_broadcast(PORT);
 
   Str buffer = STR((char[MAXLINE]){});
-  socket_send_endpoint(&s, client_msg, &ep, 0);
+  ssize_t result = socket_send_endpoint(&s, client_msg, &ep, 0);
+  if(result < 0) {
+    perror("Fail to sned to endpoint");
+    return -1;
+  }
 
   while (1) {
     int read = socket_receive_endpoint(&s, buffer, &ep, 0);

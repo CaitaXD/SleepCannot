@@ -62,6 +62,18 @@ EndPoint ip_endpoint(in_addr_t address, int port) {
   };
 }
 
+EndPoint ip_broadcast(int port) {
+  struct sockaddr_in sockaddr = {};
+  sockaddr.sin_family = AF_INET;
+  sockaddr.sin_addr.s_addr = INADDR_BROADCAST;
+  sockaddr.sin_port = htons(port);
+
+  return (EndPoint){
+      .addr = *(struct sockaddr *)&sockaddr,
+      .addrlen = sizeof(struct sockaddr_in),
+  };
+}
+
 ssize_t socket_bind(Socket *s, EndPoint endpoint) {
   if (s->error != 0) {
     return s->error;
