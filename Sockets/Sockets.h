@@ -65,7 +65,7 @@ EndPoint ip_endpoint(in_addr_t address, int port) {
 EndPoint ip_broadcast(int port) {
   struct sockaddr_in sockaddr = {};
   sockaddr.sin_family = AF_INET;
-  sockaddr.sin_addr.s_addr = INADDR_BROADCAST;
+  sockaddr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
   sockaddr.sin_port = htons(port);
 
   return (EndPoint){
