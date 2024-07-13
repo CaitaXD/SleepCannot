@@ -110,8 +110,7 @@ ssize_t socket_send_endpoint(Socket *s, Str message, EndPoint *ep, int flags) {
     return s->error;
   }
 
-  ssize_t n =
-      sendto(s->fd, message.data, message.len, flags, &ep->addr, ep->addrlen);
+  ssize_t n = sendto(s->fd, message.data, message.len, flags, &ep->addr, ep->addrlen);
 
   if (n < 0) {
     s->error = ERROR_SOCKET_SEND;

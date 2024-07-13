@@ -94,6 +94,13 @@ finally:
 
 int client() {
   Socket s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  int broadcastEnable=1;
+  int ret=setsockopt(s.fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
+  if(ret < 0) {
+    perror("Fail to sned to endpoint");
+    return -1;
+  }
+
   EndPoint ep = ip_broadcast(PORT);
 
   Str buffer = STR((char[MAXLINE]){});
