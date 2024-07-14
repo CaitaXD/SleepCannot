@@ -1,1 +1,1 @@
-gcc --debug -Wall -Wextra main.c -IDataStructures -I/. -lm -o main
+g++ --debug -Wall -Wextra main.cpp -IDataStructures -I/. -lpthread -lm -o main

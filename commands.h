@@ -1,25 +1,24 @@
 #ifndef COMMANDS_H_
 #define COMMANDS_H_
 
-#include "../object.h"
-#include "DataStructures/DynamicArray.h"
 #include "Sockets/Sockets.h"
 #include "str.h"
-
+#include <vector>
 #define MAC_ADDR_MAX 6
 #define MAC_STR_MAX 64
 #define MAC_ADDRES_FILE "/sys/class/net/eth0/address"
 #define PORT 25565
 #define MAXLINE 1024
 
+Str client_msg = STR("General, Kenoby, you are a bold one");
+Str server_msg = STR("Hello there!");
+
 typedef struct {
   unsigned char mac_addr[MAC_ADDR_MAX];
   char mac_str[MAC_STR_MAX];
 } MacAddress;
 
-typedef DynamicArray(EndPoint) Clients;
-
-#define Clients() ((Clients){})
+typedef std::vector<EndPoint> Clients;
 
 typedef void *(*Callback)(void *);
 typedef struct Command {
@@ -73,36 +72,40 @@ void *help_msg(void *args);
 Command commands[COMMAND_COUNT] = {
     // clang-format off
     [COMMAND_WAKE_ON_LAN] = {
-      .cmd = STR("Execute order 66"),
-      .fmt = "%d",
-      .description = "Sends a magic packet to the client to wake it up",
-      .callback = (Callback)wake_on_lan
+      cmd : STR("Execute order 66"),
+      description : "Sends a magic packet to the client to wake it up",
+      fmt : "%d",
+      callback : (Callback)wake_on_lan
     },
     [COMMAND_EXIT] = {
-      .cmd = STR("The negotiations were short"),
-      .description = "Exits the program",
-      .callback = (Callback)exit_program
+      cmd : STR("The negotiations were short"),
+      description : "Exits the program",
+      fmt : NULL,
+      callback : (Callback)exit_program
     },
     [COMMAND_LIST] = {
-      .cmd = STR("list"),
-      .description = "Lists all subscribed clients",
-      .callback = (Callback)list_clients
+      cmd : STR("list"),
+      description : "Lists all subscribed clients",
+      fmt : NULL,
+      callback : (Callback)list_clients
     },
     [COMMAND_CLEAR] = {
-      .cmd = STR("clear"),
-      .description = "Clears the screen",
-      .callback = (Callback)clear_screen
+      cmd : STR("clear"),
+      description : "Clears the screen",
+      fmt : NULL,
+      callback : (Callback)clear_screen
     },
     [COMMAND_PING] = {
-      .cmd = STR("ping"), 
-      .description = "Pings a client",
-      .fmt = "%d", 
-      .callback = (Callback)ping_client
+      cmd : STR("ping"), 
+      description : "Pings a client",
+      fmt : "%d", 
+      callback : (Callback)ping_client
     },
     [COMMAND_HELP] = {
-      .cmd = STR("help"),
-      .description = "Prints this message",
-      .callback = (Callback)help_msg
+      cmd : STR("help"),
+      description : "Prints this message",
+      fmt : NULL,
+      callback : (Callback)help_msg
     }
     // clang-format on
 };
@@ -122,13 +125,12 @@ int command_exec(enum CommandType cmd, void *command_args) {
 
 void *list_clients(struct list_clients_args *args) {
   Clients clients = args->clients;
-  if (clients.count == 0) {
+  if (clients.size() == 0) {
     printf("[INFO] 0 clients connected\n");
     return NULL;
   }
-  dynamic_array_for(i, clients) {
-    EndPoint cep = *dynamic_array_at(clients, i);
-
+  for(size_t i = 0; i < clients.size(); i++) {
+    EndPoint cep = clients[i];
     struct sockaddr_in *addr = (struct sockaddr_in *)&cep.addr;
     const char *ip = inet_ntoa(addr->sin_addr);
     int port = ntohs(addr->sin_port);
@@ -143,8 +145,8 @@ void *ping_client(struct ping_client_args *arg) {
   int id = arg->id;
   Clients clients = arg->clients;
 
-  if ((size_t)id < clients.count) {
-    EndPoint cep = *dynamic_array_at(clients, id);
+  if ((size_t)id < clients.size()) {
+    EndPoint cep = clients[id];
     char ping_cmd_buf[256];
     const char *iadrr = inet_ntoa(((struct sockaddr_in *)&cep.addr)->sin_addr);
     int n = snprintf(UNPACK_ARRAY(ping_cmd_buf), "ping -c 1 %s", iadrr);
@@ -167,10 +169,11 @@ void *wake_on_lan(struct wake_on_lan_args *args) {
   Clients clients = args->clients;
   Socket *s = args->s;
 
-  if ((size_t)id < clients.count) {
-    EndPoint cep = *dynamic_array_at(clients, id);
+  if ((size_t)id < clients.size()) {
+    EndPoint cep = clients[id];
     socket_send_endpoint(s, commands[COMMAND_WAKE_ON_LAN].cmd, &cep, 0);
-    Str buffer = STR((char[MAXLINE]){});
+    char bff[MAXLINE];
+    Str buffer = STR(bff);
     int read = socket_receive_endpoint(s, buffer, &cep, 0);
     if (read <= 0) {
       return (void *)-1;
@@ -214,11 +217,12 @@ void *help_msg(void *args) {
   return NULL;
 }
 
-int parse_command(Str buffer, Clients clients, Socket *s) {
+int parse_command(Clients clients, Socket *s) {
   int exit_code = 0;
-  buffer.data[0] = '\0';
-  fgets(str_unpack(buffer), stdin);
-  ssize_t read = strlen(buffer.data);
+  char bff[MAXLINE];
+  Str buffer = STR(bff);
+  fgets(bff, MAXLINE, stdin);
+  ssize_t read = strlen(bff);
   Str cmd = str_trim(str_take(buffer, read));
   enum CommandType cmd_type = get_command_type(cmd);
   void *args = NULL;
@@ -229,14 +233,16 @@ int parse_command(Str buffer, Clients clients, Socket *s) {
     break;
   }
   case COMMAND_LIST: {
-    args = &(struct list_clients_args){.clients = clients};
+    struct list_clients_args list_args = {.clients = clients};
+    args = static_cast<void *>(&list_args);
     break;
   }
   case COMMAND_PING: {
     int id;
     Str cmd_args = str_trim(str_skip(cmd, commands[cmd_type].cmd.len));
     if (sscanf(cmd_args.data, commands[cmd_type].fmt, &id) == 1) {
-      args = &(struct ping_client_args){.clients = clients, .id = id};
+      struct ping_client_args client_args = {.clients = clients, .id = id};
+      args = static_cast<void *>(&client_args);
     } else {
       exit_code = -1;
       goto finally;
@@ -247,7 +253,8 @@ int parse_command(Str buffer, Clients clients, Socket *s) {
     int id = 0;
     Str cmd_args = str_trim(str_skip(cmd, commands[cmd_type].cmd.len));
     if (sscanf(cmd_args.data, commands[cmd_type].fmt, &id) == 1) {
-      args = &(struct wake_on_lan_args){.s = s, .clients = clients, .id = id};
+      struct wake_on_lan_args wol_args = {.s = s, .clients = clients, .id = id};
+      args = static_cast<void *>(&wol_args);
     } else {
       exit_code = -1;
       goto finally;

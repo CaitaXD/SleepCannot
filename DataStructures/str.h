@@ -9,9 +9,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#if defined(__cplusplus)
+  #include <string>
+#endif
 
 typedef struct Str {
-  char *data;
+  const char *data;
   const size_t len;
 } Str;
 
@@ -32,6 +35,10 @@ const char *str_to_cstr(Str s);
   for (size_t __it = 0, __end = S.len; __it < __end;)                          \
     for (char V = S.data[__it]; __it < __end; V = S.data[++__it])
 
+#if defined(__cplusplus)
+  Str str_from_string(std::string s);
+#endif
+
 Str str_slice(Str s, ssize_t offset, ssize_t count);
 Str str_skip(Str s, ssize_t count);
 Str str_take(Str s, ssize_t count);
@@ -45,6 +52,12 @@ void println(Str s);
 #endif // STR_H_
 
 #ifdef STR_IMPLEMENTATION
+
+#if defined(__cplusplus)
+Str str_from_string(std::string s) {
+  return (Str){s.data(), s.size()};
+}
+#endif
 
 const char *_str_to_cstr(Str s, char *buff, int buff_size) {
   assert((size_t)buff_size >= CSTR_LEN(s));
