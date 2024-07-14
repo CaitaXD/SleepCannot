@@ -3,6 +3,7 @@
 
 #include "Sockets/Sockets.h"
 #include "str.h"
+#include <set>
 #include <vector>
 #define MAC_ADDR_MAX 6
 #define MAC_STR_MAX 64

@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/${fileBasenameNoExtension}",
-            "args": [],
+            "args": ["server"],
             "stopAtEntry": false,
             "miDebuggerPath": "/usr/bin/gdb",
             "cwd": "${fileDirname}",

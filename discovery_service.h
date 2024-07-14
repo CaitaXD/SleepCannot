@@ -19,31 +19,17 @@
 #include "str.h"
 #include "Sockets/Sockets.h"
 #include "commands.h"
+#include "DataStructures/LockFreeQueue.h"
 
-void ds_start_dicovering(Socket s);
-void ds_stop_dicovering();
-
-
+namespace DiscoveryService
+{
+    void start_dicovering();
+    void stop_dicovering();
+    Concurrent::LockFreeQueue<EndPoint> discovered_endpoints = {};
+}
 #endif // _DISCOVERY_SERVICE_H
 
 #ifdef DISCOVERY_SERVICE_IMPLEMENTATION
-
-Clients ds_discovered_clients = std::vector<EndPoint>();
-Socket in_ds_socket;
-
-EndPoint ds_endpoint;
-
-pthread_t ds_discovery_thread;
-pthread_t ds_sendep_thread;
-
-static inline bool contains(std::vector<EndPoint> v, EndPoint ep, int (*cmp)(EndPoint *lhs, EndPoint *rhs)) {
-    for (size_t i = 0; i < v.size(); i++) {
-        if (cmp(&v[i], &ep) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
 
 static inline int msleep(long msec)
 {
@@ -56,64 +42,98 @@ static inline int msleep(long msec)
     }
     ts.tv_sec = msec / 1000;
     ts.tv_nsec = (msec % 1000) * 1000000;
-    do {
+    do
+    {
         res = nanosleep(&ts, &ts);
     } while (res && errno == EINTR);
     return res;
 }
 
-void* ds_broadcast_thread_callback(void* data) {
-    (void)data;
-    while (1) {
-        socket_send_endpoint(&in_ds_socket, client_msg, &ds_endpoint, 0);
-        msleep(500);
-    }
-    return NULL;
-}
+namespace DiscoveryService
+{
+    Socket s;
+    pthread_t thread;
 
-void* ds_server_thread_callback(void* data) {
-    (void)data;
-    char bff[MAXLINE];
-    Str buffer = STR(bff);
-    int read;
-    while (1) {
-        read = socket_receive_endpoint(&in_ds_socket, buffer, &ds_endpoint, MSG_DONTWAIT);
-        if(errno == EAGAIN) {
-          in_ds_socket.error = 0;
-          continue;
-        }
-        if (in_ds_socket.error) {
-          pthread_cancel(ds_discovery_thread);
-          pthread_cancel(ds_sendep_thread);
-          perror("Discovery Service Error Server messager");
-          break;
-        }
+    void *sever_callback(void *data)
+    {
+        (void)data;
+        char bff[MAXLINE];
+        Str buffer = STR(bff);
+        int read;
+        while (1)
+        {
+            EndPoint ep = {};
+            read = socket_receive_endpoint(&s, buffer, &ep, 0);
+            if (s.error)
+            {
+                perror("Error");
+                pthread_cancel(thread);
+                break;
+            }
 
-        if (str_cmp(str_take(buffer, read), client_msg) == 0) {
-            if (!contains(ds_discovered_clients, ds_endpoint, epcmp_inaddr)) {
-              struct sockaddr_in *addr = (struct sockaddr_in *)&ds_endpoint.addr;
-              const char *ip = inet_ntoa(addr->sin_addr);
-              int port = ntohs(addr->sin_port);
-              printf("%s %s:%d\n", "New client, IP:", ip, port);
-              ds_discovered_clients.push_back(ds_endpoint);
+            if (str_cmp(str_take(buffer, read), client_msg) == 0)
+            {
+                discovered_endpoints.enqueue(ep);
+                socket_send_endpoint(&s, server_msg, &ep, MSG_DONTWAIT);
+                s.error = 0;
             }
         }
+        return NULL;
     }
-    return NULL;
-}
 
-void ds_start_dicovering(Socket s) {
-    pthread_create(&ds_sendep_thread, NULL, ds_broadcast_thread_callback, NULL);
-    pthread_create(&ds_discovery_thread, NULL, ds_server_thread_callback, NULL);
-    in_ds_socket = s;
-    ds_endpoint = ip_broadcast(PORT);
-}
+    void *client_callback(void *data)
+    {
+        (void)data;
+        char bff[MAXLINE];
+        Str buffer = STR(bff);
+        EndPoint braodcast_ep = ip_broadcast(PORT);
+        bool admited = false;
+        while (1)
+        {
+            EndPoint ep = {};
+            if (!admited)
+            {
+                socket_send_endpoint(&s, client_msg, &braodcast_ep, 0);
+            }
+            int read = socket_receive_endpoint(&s, buffer, &ep, 0);
+            Str msg = str_take(buffer, read);
+            if (str_cmp(msg, server_msg) == 0)
+            {
+                break;
+            }
+        }
+        return NULL;
+    }
 
-void ds_stop_dicovering() {
-    pthread_cancel(ds_discovery_thread);
-    pthread_cancel(ds_sendep_thread);
-    in_ds_socket = (Socket){};
-    ds_endpoint = (EndPoint){};
-}
+    void start_server()
+    {
+        s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        int broadcastEnable = 1;
+        int ret = setsockopt(s.fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
+        if (ret < 0)
+        {
+            perror("start_server");
+            return;
+        }
+        socket_bind(&s, ip_endpoint(INADDR_ANY, PORT));
+        pthread_create(&thread, NULL, sever_callback, NULL);
+    }
 
-#endif //DISCOVERY_SERVICE_IMPLEMENTATION
+    void start_client()
+    {
+        s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        int broadcastEnable = 1;
+        int ret = setsockopt(s.fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
+        if (ret < 0)
+            perror("start_client");
+        socket_bind(&s, ip_endpoint(INADDR_ANY, PORT));
+        pthread_create(&thread, NULL, client_callback, NULL);
+    }
+
+    void stop()
+    {
+        pthread_cancel(thread);
+        s = Socket{};
+    }
+}
+#endif // DISCOVERY_SERVICE_IMPLEMENTATION
