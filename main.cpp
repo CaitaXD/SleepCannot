@@ -13,7 +13,8 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <string>
-#include <set>
+#include <algorithm>
+
 
 #define STR_IMPLEMENTATION
 #include "str.h"
@@ -45,7 +46,6 @@ int server(int port)
   printf("Server Side\n\n");
   help_msg(NULL);
   DiscoveryService::start_server(port);
-
   std::vector<EndPoint> clients = {};
   Socket s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   while (1)
@@ -62,10 +62,10 @@ int server(int port)
     EndPoint ep = {};
     if (DiscoveryService::discovered_endpoints.dequeue(ep))
     {
-      struct sockaddr_in *addr = (struct sockaddr_in *)&ep.addr;
-      const char *ip = inet_ntoa(addr->sin_addr);
-      int port = ntohs(addr->sin_port);
-      printf("endpoint: %s:%d\n", ip, port);
+      if(std::find_if(clients.begin(), clients.end(), [&ep](EndPoint other){ return epcmp_inaddr(&ep, &other); }) == clients.end())
+      {
+      	clients.push_back(ep);
+      }
     }
   }
 finally:
