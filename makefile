@@ -4,18 +4,20 @@ LDFLAGS =
 
 # Build directory
 BUILD_DIR = build
+BIN_DIR = bin
 
 # Source and Object files
 SOURCES = $(wildcard src/*.cpp)
 OBJECTS = $(SOURCES:src/%.cpp=$(BUILD_DIR)/%.o)
 
 # Target executable name
-TARGET = sleep_server
+TARGET = $(BIN_DIR)/sleep_server
 
 # Default target
 all: $(TARGET)
 
 $(TARGET): $(OBJECTS)
+	@mkdir -p $(BIN_DIR)
 	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/%.o: src/%.cpp
@@ -24,7 +26,7 @@ $(BUILD_DIR)/%.o: src/%.cpp
 
 # Clean build files
 clean:
-	rm -rf $(BUILD_DIR) $(TARGET)
+	rm -rf $(BUILD_DIR) $(BIN_DIR)
 
 # Non-file targets
 .PHONY: all clean
