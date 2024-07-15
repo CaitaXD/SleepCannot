@@ -2,6 +2,7 @@
 #include <atomic>
 #include <memory>
 
+// https://www.machinet.net/tutorial-eng/implement-custom-lock-free-queue-cpp-multi-threaded
 namespace Concurrent
 {
     template <typename T>
