@@ -52,6 +52,11 @@ ssize_t socket_receive_endpoint(Socket *s, Str buffer, EndPoint *ep, int flags);
 #endif // SOCKET_H_
 #ifdef SOCKET_IMPLEMENTATION
 
+in_addr_t to_in_adrr(unsigned char a, unsigned char b, unsigned char c, unsigned char d)
+{
+  return (a << 24) | (b << 16) | (c << 8) | d;
+}
+
 EndPoint ip_endpoint(in_addr_t address, int port)
 {
   struct sockaddr_in sockaddr = {};
@@ -69,7 +74,7 @@ EndPoint ip_broadcast(int port)
 {
   struct sockaddr_in sockaddr = {};
   sockaddr.sin_family = AF_INET;
-  sockaddr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+  sockaddr.sin_addr.s_addr = INADDR_BROADCAST;
   sockaddr.sin_port = htons(port);
 
   return (EndPoint){
@@ -77,6 +82,7 @@ EndPoint ip_broadcast(int port)
       .addrlen = sizeof(struct sockaddr_in),
   };
 }
+
 
 ssize_t socket_bind(Socket *s, EndPoint endpoint)
 {
@@ -120,7 +126,7 @@ ssize_t socket_send_endpoint(Socket *s, Str message, EndPoint *ep, int flags)
   {
     return s->error;
   }
-  ep->addrlen = sizeof(ep->addr);
+  ep->addrlen = sizeof(sockaddr_in);
   ssize_t n = sendto(s->fd, message.data, message.len, flags, &ep->addr, ep->addrlen);
 
   if (n < 0)
@@ -137,7 +143,7 @@ ssize_t socket_receive_endpoint(Socket *s, Str buffer, EndPoint *ep, int flags)
   {
     return s->error;
   }
-  ep->addrlen = sizeof(ep->addr);
+  ep->addrlen = sizeof(sockaddr_in);
   ssize_t n = recvfrom(s->fd, (char *)str_unpack(buffer), flags, &ep->addr, &ep->addrlen);
   if (n < 0 && errno != EAGAIN)
   {

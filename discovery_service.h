@@ -23,8 +23,8 @@
 
 namespace DiscoveryService
 {
-    void start_dicovering();
-    void stop_dicovering();
+    void start_dicovering(int port);
+    void stop_dicovering(int port);
     Concurrent::LockFreeQueue<EndPoint> discovered_endpoints = {};
 }
 #endif // _DISCOVERY_SERVICE_H
@@ -64,7 +64,7 @@ namespace DiscoveryService
         {
             EndPoint ep = {};
             read = socket_receive_endpoint(&s, buffer, &ep, 0);
-            if (s.error)
+            if (errno != 0)
             {
                 perror("Error");
                 pthread_cancel(thread);
@@ -76,6 +76,7 @@ namespace DiscoveryService
                 discovered_endpoints.enqueue(ep);
                 socket_send_endpoint(&s, server_msg, &ep, MSG_DONTWAIT);
                 s.error = 0;
+                msleep(500);
             }
         }
         return NULL;
@@ -83,29 +84,31 @@ namespace DiscoveryService
 
     void *client_callback(void *data)
     {
-        (void)data;
+        int port = (int)(intptr_t)data;
         char bff[MAXLINE];
         Str buffer = STR(bff);
-        EndPoint braodcast_ep = ip_broadcast(PORT);
-        bool admited = false;
+        EndPoint braodcast_ep = ip_broadcast(port);
         while (1)
         {
             EndPoint ep = {};
-            if (!admited)
+            s.error = 0;
+            socket_send_endpoint(&s, client_msg, &braodcast_ep, 0);
+            int read = socket_receive_endpoint(&s, buffer, &ep, MSG_DONTWAIT);
+            if (read < 0)
             {
-                socket_send_endpoint(&s, client_msg, &braodcast_ep, 0);
+                continue;
             }
-            int read = socket_receive_endpoint(&s, buffer, &ep, 0);
             Str msg = str_take(buffer, read);
             if (str_cmp(msg, server_msg) == 0)
             {
-                break;
+                printf(str_fmt "\n", str_args(buffer));
+                msleep(500);
             }
         }
         return NULL;
     }
 
-    void start_server()
+    void start_server(int port)
     {
         s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         int broadcastEnable = 1;
@@ -115,19 +118,18 @@ namespace DiscoveryService
             perror("start_server");
             return;
         }
-        socket_bind(&s, ip_endpoint(INADDR_ANY, PORT));
+        socket_bind(&s, ip_endpoint(INADDR_ANY, port));
         pthread_create(&thread, NULL, sever_callback, NULL);
     }
 
-    void start_client()
+    void start_client(int port)
     {
         s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         int broadcastEnable = 1;
         int ret = setsockopt(s.fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
         if (ret < 0)
             perror("start_client");
-        socket_bind(&s, ip_endpoint(INADDR_ANY, PORT));
-        pthread_create(&thread, NULL, client_callback, NULL);
+        pthread_create(&thread, NULL, client_callback, (void *)(intptr_t)port);
     }
 
     void stop()

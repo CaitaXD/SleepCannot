@@ -40,11 +40,11 @@ bool key_hit()
   return select(STDIN_FILENO + 1, &readfds, NULL, NULL, &tv) == 1;
 }
 
-int server()
+int server(int port)
 {
   printf("Server Side\n\n");
   help_msg(NULL);
-  DiscoveryService::start_server();
+  DiscoveryService::start_server(port);
 
   std::vector<EndPoint> clients = {};
   Socket s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -72,9 +72,10 @@ finally:
   return s.error;
 }
 
-int client()
+int client(int port)
 {
-  DiscoveryService::start_client();
+  printf("Client Side\n\n");
+  DiscoveryService::start_client(port);
   while (1)
   {
     msleep(1000);
@@ -85,19 +86,25 @@ int client()
 
 int main(int argc, char **argv)
 {
-  bool is_server = argc > 1 && !strcmp(argv[1], "server");
+  if (argc <= 2)
+  {
+    printf("Usage: main <server|client> [port]\n");
+    return -1;
+  }
+  bool is_server = !strcmp(argv[1], "server");
+  int port = atoi(argv[2]);
 
   ssize_t exit_code;
   if (is_server)
   {
-    if ((exit_code = server()) != 0)
+    if ((exit_code = server(port)) != 0)
     {
       printf("Exit Code: %zi \n", exit_code);
     }
   }
   else
   {
-    if ((exit_code = client()) != 0)
+    if ((exit_code = client(port)) != 0)
     {
       printf("Exit Code: %zi \n", exit_code);
     }
