@@ -88,13 +88,13 @@ int client(int port)
 
 int main(int argc, char **argv)
 {
-  if (argc <= 2)
+  if (argc <= 1)
   {
-    printf("Usage: main <server|client> [port]\n");
+    printf("Usage: main <manager> if manager else <> [port (for testing)]\n");
     return -1;
   }
-  bool is_server = !strcmp(argv[1], "server");
-  int port = atoi(argv[2]);
+  bool is_server = !strcmp(argv[1], "manager");
+  int port = is_server ? atoi(argv[2]) : atoi(argv[1]);
 
   ssize_t exit_code;
   if (is_server)
