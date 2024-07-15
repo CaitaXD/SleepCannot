@@ -14,7 +14,7 @@
 #include <pthread.h>
 #include <string>
 #include <algorithm>
-
+#include <thread>
 
 #define STR_IMPLEMENTATION
 #include "str.h"
@@ -32,6 +32,8 @@
 #include "discovery_service.h"
 #undef DISCOVERY_SERVICE_IMPLEMENTATION
 
+#include "Management/management.hpp"
+
 bool key_hit()
 {
   struct timeval tv = {0, 0};
@@ -48,6 +50,12 @@ int server(int port)
   DiscoveryService::start_server(port);
   std::vector<EndPoint> clients = {};
   Socket s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  // Control reading and writting to manager table
+  ParticipantTable participants;
+  mutex_data_t mutex_data = {std::mutex(), std::condition_variable(), false, 1, {0}};
+  std::thread table_readers[1];
+  // Update management table display thread
+  table_readers[0] = std::thread(print_management_table, std::ref(participants), std::ref(mutex_data), std::ref(mutex_data.read_count[0]));
   while (1)
   {
     if (key_hit())
@@ -64,11 +72,13 @@ int server(int port)
     {
       if(std::find_if(clients.begin(), clients.end(), [&ep](EndPoint other){ return epcmp_inaddr(&ep, &other); }) == clients.end())
       {
+        //std::cout << "New Client: " << inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr) << std::endl;
       	clients.push_back(ep);
       }
     }
   }
 finally:
+  table_readers[0].join();  
   DiscoveryService::stop();
   s.error |= close(s.fd);
   return s.error;

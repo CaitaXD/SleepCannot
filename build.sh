@@ -1,1 +1,1 @@
-g++ --debug -Wall -Wextra main.cpp -IDataStructures -I/. -lpthread -lm -o sleep_server
+g++ main.cpp --debug -Wall -Wextra -IDataStructures -I/. -lpthread -lm -o sleep_server
