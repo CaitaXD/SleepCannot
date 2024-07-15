@@ -37,6 +37,8 @@
 *.hex
 *.bin
 *.elf
+bin
+build
 
 # Debug files
 *.dSYM/
