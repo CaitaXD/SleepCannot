@@ -106,7 +106,7 @@ namespace DiscoveryService
             Str msg = str_take(buffer, read);
             if (str_cmp(msg, server_msg) == 0)
             {
-                printf(str_fmt "\n", str_args(buffer));
+                printf(str_fmt "\n", str_args(msg));
                 sleep(60);
             }
         }
@@ -118,6 +118,7 @@ namespace DiscoveryService
         s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         int broadcastEnable = 1;
         int ret = setsockopt(s.fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
+        printf("%d", ret);
         if (ret < 0)
         {
             perror("start_server");
@@ -134,6 +135,7 @@ namespace DiscoveryService
         int ret = setsockopt(s.fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
         if (ret < 0)
             perror("start_client");
+	socket_bind(&s, ip_endpoint(INADDR_ANY, port));
         pthread_create(&thread, NULL, client_callback, (void *)(intptr_t)port);
     }
 
