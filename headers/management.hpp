@@ -48,23 +48,25 @@ participant_t get_participant(const ParticipantTable& table, const std::string& 
 
 // Display an individual participant
 void print_participant(const participant_t& p) {
-    std::cout << p.hostname << "\t\t";
+    std::cout << p.hostname << "\t";
     std::cout << p.mac.mac_str << "\t\t";
-    std::cout << p.ip << "\t\t";
-    std::cout << (p.status ? "awaken" : "ASLEEP") << "\t\t";
+    std::cout << p.ip << "\t";
+    std::cout << (p.status ? "awaken" : "ASLEEP") << "\t";
     std::cout << std::endl;
 }
 
 // Display the entire management table
 void print_management_table(const ParticipantTable& table, mutex_data_t& mutex_data, int& read_count) {
-    std::unique_lock<std::mutex> lock(mutex_data.mutex);
-    mutex_data.cv.wait(lock, [&] { return read_count < mutex_data.update_count; });
-    read_count = mutex_data.update_count;
-    std::cout << "hostname\tmac address\tip\t\tstatus" << std::endl;
-    for (auto it = table.begin(); it != table.end(); ++it) {
-        print_participant(it->second);
+    while (true) {
+        std::unique_lock<std::mutex> lock(mutex_data.mutex);
+        mutex_data.cv.wait(lock, [&] { return read_count < mutex_data.update_count; });
+        read_count = mutex_data.update_count;
+        std::cout << "hostname\tmac address\tip\t\tstatus" << std::endl;
+        for (auto it = table.begin(); it != table.end(); ++it) {
+            print_participant(it->second);
+        }
+        mutex_data.updated = false;
     }
-    mutex_data.updated = false;
 }
 
 // Insert a participant in the table
