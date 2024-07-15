@@ -58,7 +58,7 @@ struct wake_on_lan_args {
   int id;
 };
 
-MacAddress get_macaddr();
+MacAddress get_mac();
 void *wake_on_lan(struct wake_on_lan_args *args);
 void *list_clients(struct list_clients_args *clients);
 void *ping_client(struct ping_client_args *arg);
@@ -288,10 +288,6 @@ MacAddress get_mac() {
   sscanf(mac_str, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &mac.mac_addr[0],
          &mac.mac_addr[1], &mac.mac_addr[2], &mac.mac_addr[3], &mac.mac_addr[4],
          &mac.mac_addr[5]);
-
-  printf("MAC Address: %02x:%02x:%02x:%02x:%02x:%02x\n", mac.mac_addr[0],
-         mac.mac_addr[1], mac.mac_addr[2], mac.mac_addr[3], mac.mac_addr[4],
-         mac.mac_addr[5]);
 
   mac.mac_str[0] = '\0';
   for (int i = 0; i < MAC_ADDR_MAX; i++) {

@@ -24,7 +24,7 @@ const char *str_to_cstr(Str s);
 
 #define STR(s) ((Str){s, ARRAY_LENGTH(s) - 1})
 
-#define str_to_cstr(s) (_str_to_cstr(s, alloca(CSTR_LEN(s)), CSTR_LEN(s)))
+#define str_to_cstr(s) (_str_to_cstr(s, (char *)alloca(CSTR_LEN(s)), CSTR_LEN(s)))
 
 #define str_unpack(s) (s).data, (s).len
 
@@ -37,6 +37,7 @@ const char *str_to_cstr(Str s);
 
 #if defined(__cplusplus)
   Str str_from_string(std::string s);
+  std::string string_from_str(Str s);
 #endif
 
 Str str_slice(Str s, ssize_t offset, ssize_t count);
@@ -56,6 +57,9 @@ void println(Str s);
 #if defined(__cplusplus)
 Str str_from_string(std::string s) {
   return (Str){s.data(), s.size()};
+}
+std::string string_from_str(Str s){
+  return std::string(s.data, s.len);
 }
 #endif
 

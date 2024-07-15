@@ -68,7 +68,7 @@ int server(int port)
       goto finally;
     }
 
-    EndPoint ep = {};
+    MachineEndpoint ep = {};
     if (DiscoveryService::discovered_endpoints.dequeue(ep))
     {
       if(std::find_if(clients.begin(), clients.end(), [&ep](EndPoint other){ return epcmp_inaddr(&ep, &other); }) == clients.end())

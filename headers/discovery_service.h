@@ -21,15 +21,23 @@
 #include "commands.h"
 #include "DataStructures/LockFreeQueue.h"
 
+struct MachineEndpoint : EndPoint
+{
+    MacAddress mac;
+    std::string hostname;
+};
 namespace DiscoveryService
 {
-    void start_dicovering(int port);
-    void stop_dicovering(int port);
-    Concurrent::LockFreeQueue<EndPoint> discovered_endpoints = {};
+    void start_server(int port);
+    void start_client(int port);
+    void stop();
+    Concurrent::LockFreeQueue<MachineEndpoint> discovered_endpoints = {};
 }
 #endif // _DISCOVERY_SERVICE_H
 
 #ifdef DISCOVERY_SERVICE_IMPLEMENTATION
+
+
 
 static inline int msleep(long msec)
 {
@@ -57,14 +65,14 @@ namespace DiscoveryService
     void *sever_callback(void *data)
     {
         (void)data;
-        char bff[MAXLINE];
-        Str buffer = STR(bff);
+        char buffer[MAXLINE];
+        Str buffer_view = STR(buffer);
         int read;
         while (1)
         {
-            EndPoint ep = {};
-            bzero(bff, MAXLINE);
-            read = socket_receive_endpoint(&s, buffer, &ep, MSG_WAITALL);
+            MachineEndpoint ep = {};
+            bzero(buffer, MAXLINE);
+            read = socket_receive_endpoint(&s, buffer_view, &ep, MSG_WAITALL);
             if (errno != 0)
             {
                 perror("Error");
@@ -72,12 +80,33 @@ namespace DiscoveryService
                 break;
             }
 
-            if (str_cmp(str_take(buffer, read), client_msg) == 0)
+            if (str_starts_with(str_take(buffer_view, read), client_msg) == 0)
             {
-                EndPoint top = {};
+                MachineEndpoint top = {};
                 if(discovered_endpoints.peek(top) && epcmp_inaddr(&top, &ep) == 0) {
                     continue;
                 }
+                int cursor = client_msg.len;
+                int client_hostname_len = *(int*)(str_slice(buffer_view, cursor, sizeof(int)).data);
+                cursor += sizeof(int);
+
+                Str client_hostname = str_slice(buffer_view, cursor, client_hostname_len);
+                cursor += client_hostname_len;
+                
+                Str client_mac_addr = str_slice(buffer_view, cursor, MAC_ADDR_MAX);
+                cursor += MAC_ADDR_MAX;
+                
+                Str client_mac_str = str_slice(buffer_view, cursor, MAC_STR_MAX);
+                cursor += MAC_STR_MAX;
+
+                memcpy(ep.mac.mac_addr, client_mac_addr.data, MAC_ADDR_MAX);
+                memcpy(ep.mac.mac_str, client_mac_str.data, MAC_STR_MAX);
+                ep.hostname = string_from_str(client_hostname);
+                
+                printf("Hostname: %s\n", ep.hostname.c_str());
+                printf("MAC: %s\n", ep.mac.mac_str);
+                printf("IP: %s\n", inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr));
+
                 discovered_endpoints.enqueue(ep);
                 socket_send_endpoint(&s, server_msg, &ep, MSG_DONTWAIT);
                 s.error = 0;
@@ -86,24 +115,37 @@ namespace DiscoveryService
         return NULL;
     }
 
+    #define HOSTNAME_LEN 1024
     void *client_callback(void *data)
     {
         int port = (int)(intptr_t)data;
-        char bff[MAXLINE];
-        Str buffer = STR(bff);
+        std::string buffer = std::string();
         EndPoint braodcast_ep = ip_broadcast(port);
         while (1)
         {
+            buffer.clear();
             EndPoint ep = {};
             s.error = 0;
-            socket_send_endpoint(&s, client_msg, &braodcast_ep, 0);
+            MacAddress mac = get_mac();
+            char hostname[HOSTNAME_LEN];
+            gethostname(hostname, HOSTNAME_LEN);
+            int hostname_len = strlen(hostname);
+
+            buffer.append(str_unpack(client_msg));
+            buffer.append((char*)&(hostname_len), sizeof(hostname_len));
+            buffer.append(hostname, hostname_len);
+            buffer.append((char *)mac.mac_addr, MAC_ADDR_MAX);
+            buffer.append(mac.mac_str, MAC_STR_MAX);
+            
+            Str buffer_view = str_from_string(buffer);
+            socket_send_endpoint(&s, buffer_view, &braodcast_ep, 0);
             msleep(1);
-            int read = socket_receive_endpoint(&s, buffer, &ep, MSG_DONTWAIT);
+            int read = socket_receive_endpoint(&s, buffer_view, &ep, MSG_DONTWAIT);
             if (read < 0)
             {
                 continue;
             }
-            Str msg = str_take(buffer, read);
+            Str msg = str_take(buffer_view, read);
             if (str_cmp(msg, server_msg) == 0)
             {
                 printf(str_fmt "\n", str_args(msg));
@@ -133,9 +175,8 @@ namespace DiscoveryService
         s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         int broadcastEnable = 1;
         int ret = setsockopt(s.fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
-        if (ret < 0)
-            perror("start_client");
-	socket_bind(&s, ip_endpoint(INADDR_ANY, port));
+        if (ret < 0) perror("start_client");
+	    //socket_bind(&s, ip_endpoint(INADDR_ANY, port));
         pthread_create(&thread, NULL, client_callback, (void *)(intptr_t)port);
     }
 
