@@ -17,22 +17,22 @@
 #include <thread>
 
 #define STR_IMPLEMENTATION
-#include "str.h"
+#include "../headers/DataStructures/str.h"
 #undef STR_IMPLEMENTATION
 
 #define SOCKET_IMPLEMENTATION
-#include "Sockets/Sockets.h"
+#include "../headers/Sockets.h"
 #undef SOCKET_IMPLEMENTATION
 
 #define COMMANDS_IMPLEMENTATION
-#include "commands.h"
+#include "../headers/commands.h"
 #undef COMMANDS_IMPLEMENTATION
 
 #define DISCOVERY_SERVICE_IMPLEMENTATION
-#include "discovery_service.h"
+#include "../headers/discovery_service.h"
 #undef DISCOVERY_SERVICE_IMPLEMENTATION
 
-#include "Management/management.hpp"
+#include "../headers/management.hpp"
 
 bool key_hit()
 {
@@ -54,6 +54,7 @@ int server(int port)
   ParticipantTable participants;
   mutex_data_t mutex_data = {std::mutex(), std::condition_variable(), false, 1, {0}};
   std::thread table_readers[1];
+  std::thread table_writers[1];
   // Update management table display thread
   table_readers[0] = std::thread(print_management_table, std::ref(participants), std::ref(mutex_data), std::ref(mutex_data.read_count[0]));
   while (1)
@@ -72,8 +73,11 @@ int server(int port)
     {
       if(std::find_if(clients.begin(), clients.end(), [&ep](EndPoint other){ return epcmp_inaddr(&ep, &other); }) == clients.end())
       {
-        //std::cout << "New Client: " << inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr) << std::endl;
-      	clients.push_back(ep);
+        std::cout << "New Client: " << inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr) << std::endl;
+      	// Adds new client to the management table
+        //participant_t p = {inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr), MacAddress{}, inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr), true};
+        table_writers[0] = std::thread (add_participant, std::ref(participants), participant_t{inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr), MacAddress{"1:1:1", "1:1:1:1"}, inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr), true}, std::ref(mutex_data));
+        clients.push_back(ep);
       }
     }
   }

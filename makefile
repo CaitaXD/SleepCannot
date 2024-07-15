@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = --debug -Wall -Wextra -IDataStructures -I/. -lpthread -lm
+CXXFLAGS = --debug -Wall -Wextra -lpthread -lm
 LDFLAGS =
 
 # Build directory

@@ -1,8 +1,8 @@
 #ifndef COMMANDS_H_
 #define COMMANDS_H_
 
-#include "Sockets/Sockets.h"
-#include "str.h"
+#include "Sockets.h"
+#include "DataStructures/str.h"
 #include <set>
 #include <vector>
 #define MAC_ADDR_MAX 6

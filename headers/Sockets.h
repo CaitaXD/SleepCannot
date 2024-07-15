@@ -1,7 +1,7 @@
 #ifndef SOCKET_H_
 #define SOCKET_H_
 
-#include "../DataStructures/str.h"
+#include "DataStructures/str.h"
 #include <arpa/inet.h>
 #include <assert.h>
 #include <netinet/in.h>

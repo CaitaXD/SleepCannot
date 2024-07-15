@@ -16,8 +16,8 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <vector>
-#include "str.h"
-#include "Sockets/Sockets.h"
+#include "DataStructures/str.h"
+#include "Sockets.h"
 #include "commands.h"
 #include "DataStructures/LockFreeQueue.h"
 

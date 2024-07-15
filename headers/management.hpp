@@ -7,7 +7,7 @@
 #include <string>
 #include <mutex>
 #include <condition_variable>
-#include "../commands.h"
+#include "commands.h"
 
 // SHOULD NOT BE HERE, MOVE ELSEWHERE (i was having compiler issues)
 // #define MAC_ADDR_MAX 6
