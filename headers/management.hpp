@@ -128,6 +128,8 @@ void show_status(const ParticipantTable& table, mutex_data_t& mutex_data, int& r
     }
 }
 
+
+
 //wol function
 void wake_on_lan(const ParticipantTable& table, const std::string& hostname, mutex_data_t& mutex_data) {
     participant_t p = get_participant(table, hostname, mutex_data, 0);
