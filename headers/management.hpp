@@ -8,6 +8,7 @@
 #include <mutex>
 #include <condition_variable>
 #include "commands.h"
+#include "tcp.hpp"
 
 // SHOULD NOT BE HERE, MOVE ELSEWHERE (i was having compiler issues)
 // #define MAC_ADDR_MAX 6
@@ -112,5 +113,60 @@ participant_t get_participant(const ParticipantTable& table, const std::string& 
     mutex_data.updated = false;
     return table.at(hostname);
 }
+
+void show_status(const ParticipantTable& table, mutex_data_t& mutex_data, int& read_count) {
+    while (true) {
+        std::unique_lock<std::mutex> lock(mutex_data.mutex);
+        mutex_data.cv.wait(lock, [&] { return read_count < mutex_data.update_count; });
+        read_count = mutex_data.update_count;
+        for (auto it = table.begin(); it != table.end(); ++it) {
+            if (it->second.status) {
+                std::cout << it->first << " is awake" << std::endl;
+            } else {
+                std::cout << it->first << " is asleep" << std::endl;
+            }
+        }
+        mutex_data.updated = false;
+    }
+}
+
+
+
+// Function to send a magic packet using TCP
+void wake_on_lan(const ParticipantTable& table, const std::string& hostname, mutex_data_t& mutex_data) {
+    participant_t p = get_participant(table, hostname, mutex_data, 0);
+    if (p.hostname == "None") {
+        std::cout << "Participant not found" << std::endl;
+        return;
+    }
+    if (p.status) {
+        std::cout << "Participant is already awake" << std::endl;
+        return;
+    }
+
+    // Initialize TCP client
+    TCP tcp_client;
+    if (tcp_client.socket() != 0) {
+        std::cerr << "Error creating socket" << std::endl;
+        return;
+    }
+
+    if (tcp_client.connect(p.ip, 9) != 0) { // Port 9 is typically used for Wake-on-LAN
+        std::cerr << "Error connecting to " << p.ip << std::endl;
+        return;
+    }
+
+    // Send magic packet
+    std::string magic_packet = "Your magic packet data here"; // Replace with actual magic packet data
+    if (tcp_client.send(magic_packet) != 0) {
+        std::cerr << "Error sending magic packet to " << p.hostname << std::endl;
+        return;
+    }
+
+    std::cout << "Sent magic packet to " << p.hostname << std::endl;
+
+    tcp_client.close();
+}
+
 
 #endif // MANAGEMENT_IMPLEMENTATION
