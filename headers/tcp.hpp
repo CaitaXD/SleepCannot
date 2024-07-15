@@ -17,7 +17,6 @@ public:
   int send(const std::string &data);
   int recv(std::string &data);
   int close();
-  int socket();
 
   // for server
   int bind(int port);
@@ -26,6 +25,8 @@ public:
   int send(int clientSocket, const std::string &data);
   int recv(int clientSocket, std::string &data);
   int close(int clientSocket);
+  //int socket();
+  
   int socket();
 
 private:

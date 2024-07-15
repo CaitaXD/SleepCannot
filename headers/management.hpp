@@ -133,8 +133,8 @@ void show_status(const ParticipantTable& table, mutex_data_t& mutex_data, int& r
 
 
 // Function to send a magic packet using TCP
-void wake_on_lan(const ParticipantTable& table, const std::string& hostname, mutex_data_t& mutex_data) {
-    participant_t p = get_participant(table, hostname, mutex_data, 0);
+void wake_on_lan_mgm(const ParticipantTable& table, const std::string& hostname, mutex_data_t& mutex_data, int& read_count) {
+    participant_t p = get_participant(table, hostname, mutex_data, read_count);
     if (p.hostname == "None") {
         std::cout << "Participant not found" << std::endl;
         return;

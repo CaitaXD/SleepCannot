@@ -7,7 +7,7 @@
 #include <vector>
 #define MAC_ADDR_MAX 6
 #define MAC_STR_MAX 64
-#define MAC_ADDRES_FILE "/sys/class/net/eth0/address"
+#define MAC_ADDRES_FILE "/sys/class/net/eth0/address" // "/sys/class/net/wlp2s0/address"
 #define PORT 25565
 #define MAXLINE 1024
 
