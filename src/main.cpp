@@ -73,10 +73,10 @@ int server(int port)
     {
       if(std::find_if(clients.begin(), clients.end(), [&ep](EndPoint other){ return epcmp_inaddr(&ep, &other); }) == clients.end())
       {
-        std::cout << "New Client: " << inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr) << std::endl;
       	// Adds new client to the management table
-        //participant_t p = {inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr), MacAddress{}, inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr), true};
-        table_writers[0] = std::thread (add_participant, std::ref(participants), participant_t{inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr), MacAddress{"1:1:1", "1:1:1:1"}, inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr), true}, std::ref(mutex_data));
+        char* ip = inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr);
+        participant_t p = {ep.hostname, ep.mac, ip, true};
+        table_writers[0] = std::thread (add_participant, std::ref(participants), std::ref(p), std::ref(mutex_data));
         clients.push_back(ep);
       }
     }

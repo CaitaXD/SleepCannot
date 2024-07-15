@@ -48,10 +48,10 @@ participant_t get_participant(const ParticipantTable& table, const std::string& 
 
 // Display an individual participant
 void print_participant(const participant_t& p) {
-    std::cout << p.hostname << "\t";
-    std::cout << p.mac.mac_str << "\t\t";
+    std::cout << p.hostname << "\t\t";
+    std::cout << p.mac.mac_str << "\t";
     std::cout << p.ip << "\t";
-    std::cout << (p.status ? "awaken" : "ASLEEP") << "\t";
+    std::cout << (p.status ? "awaken" : "ASLEEP");
     std::cout << std::endl;
 }
 
@@ -61,7 +61,8 @@ void print_management_table(const ParticipantTable& table, mutex_data_t& mutex_d
         std::unique_lock<std::mutex> lock(mutex_data.mutex);
         mutex_data.cv.wait(lock, [&] { return read_count < mutex_data.update_count; });
         read_count = mutex_data.update_count;
-        std::cout << "hostname\tmac address\tip\t\tstatus" << std::endl;
+        std::cout << "\t\t\t\033[1mManagement Table\033[0m\t\t\t" << std::endl;
+        std::cout << "\033[1mhostname\tmac address\t\tip\t\tstatus\033[0m" << std::endl;
         for (auto it = table.begin(); it != table.end(); ++it) {
             print_participant(it->second);
         }

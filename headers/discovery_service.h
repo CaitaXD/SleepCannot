@@ -103,9 +103,9 @@ namespace DiscoveryService
                 memcpy(ep.mac.mac_str, client_mac_str.data, MAC_STR_MAX);
                 ep.hostname = string_from_str(client_hostname);
                 
-                printf("Hostname: %s\n", ep.hostname.c_str());
-                printf("MAC: %s\n", ep.mac.mac_str);
-                printf("IP: %s\n", inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr));
+                // printf("Hostname: %s\n", ep.hostname.c_str());
+                // printf("MAC: %s\n", ep.mac.mac_str);
+                // printf("IP: %s\n", inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr));
 
                 discovered_endpoints.enqueue(ep);
                 socket_send_endpoint(&s, server_msg, &ep, MSG_DONTWAIT);
@@ -160,7 +160,7 @@ namespace DiscoveryService
         s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         int broadcastEnable = 1;
         int ret = setsockopt(s.fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
-        printf("%d", ret);
+        //printf("%d", ret);
         if (ret < 0)
         {
             perror("start_server");
