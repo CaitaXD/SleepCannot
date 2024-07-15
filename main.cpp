@@ -55,12 +55,14 @@ int server(int port)
       s.error |= parse_command(clients, &s);
     }
     if (s.error)
-      goto finally;
-
-    auto ep = DiscoveryService::discovered_endpoints.dequeue();
-    if (ep)
     {
-      struct sockaddr_in *addr = (struct sockaddr_in *)&ep->addr;
+      goto finally;
+    }
+
+    EndPoint ep = {};
+    if (DiscoveryService::discovered_endpoints.dequeue(ep))
+    {
+      struct sockaddr_in *addr = (struct sockaddr_in *)&ep.addr;
       const char *ip = inet_ntoa(addr->sin_addr);
       int port = ntohs(addr->sin_port);
       printf("endpoint: %s:%d\n", ip, port);

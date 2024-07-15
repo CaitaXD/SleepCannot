@@ -11,50 +11,44 @@ namespace Concurrent
         struct node
         {
             T value;
-            struct node *next;
+            std::atomic<node*> next;
+    		node(T value) : value(value), next(nullptr) {}
         };
-    	struct node *head;
-	    struct node *tail;
+		std::atomic<node*> head;
+		std::atomic<node*> tail;
     public:
 		LockFreeQueue() {
-			head = new struct node();
-			tail = head;
-			head->value = {};
-			head->next = nullptr;
+			struct node* node = new struct node(T());
+ 			head.store(node, std::memory_order_relaxed);
+    		tail.store(node, std::memory_order_relaxed);
 		}
         void enqueue(T value) {
-	        struct node *n;
-	        struct node *node =  new struct node();
-	        node->value = value; 
-	        node->next = NULL;
-	        while (1) {
-	        	n = tail;
-	        	if (__sync_bool_compare_and_swap(&(n->next), nullptr, node)) {
-	        		break;
-	        	} else {
-	        		__sync_bool_compare_and_swap(&(tail), n, n->next);
-	        	}
-	        }
-	        __sync_bool_compare_and_swap(&(tail), n, node);
+    		struct node* node = new struct node(value);
+    		struct node* prevNode = tail.exchange(node, std::memory_order_acq_rel);
+    		prevNode->next.store(node, std::memory_order_relaxed);
         }
-        T* dequeue() {
-			if (head == nullptr) {
-				return nullptr;
+    	bool dequeue(T& result)
+		{
+		    node* theHead = head.load(std::memory_order_relaxed);
+		    node* theNext = theHead->next.load(std::memory_order_acq_rel);
+		    if (theNext != nullptr){
+		        result = theNext->value;
+		        head.store(theNext, std::memory_order_release);
+		        delete theHead;
+		        return true; 
+		    }
+		    return false;
+		}
+		bool peek(T& result)
+		{
+			node* theHead = head.load(std::memory_order_relaxed);
+			node* theNext = theHead->next.load(std::memory_order_acquire);
+			if (theNext != nullptr)
+			{
+				result = theNext->value;
+				return true;
 			}
-	        struct node *n;
-	        T *val;
-	        while (1) {
-	        	n = head;
-	        	if (n->next == NULL) {
-                    return NULL;
-	        	}
-	        	if (__sync_bool_compare_and_swap(&(head), n, n->next)) {
-	        		break;
-	        	}
-	        }
-	        val = &n->next->value;
-	        delete n;
-	        return val;
-        }
-    };
+			return false;
+		}
+	};
 }

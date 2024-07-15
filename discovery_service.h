@@ -63,7 +63,8 @@ namespace DiscoveryService
         while (1)
         {
             EndPoint ep = {};
-            read = socket_receive_endpoint(&s, buffer, &ep, 0);
+            bzero(bff, MAXLINE);
+            read = socket_receive_endpoint(&s, buffer, &ep, MSG_WAITALL);
             if (errno != 0)
             {
                 perror("Error");
@@ -73,10 +74,13 @@ namespace DiscoveryService
 
             if (str_cmp(str_take(buffer, read), client_msg) == 0)
             {
+                EndPoint top = {};
+                if(discovered_endpoints.peek(top) && epcmp_inaddr(&top, &ep) == 0) {
+                    continue;
+                }
                 discovered_endpoints.enqueue(ep);
                 socket_send_endpoint(&s, server_msg, &ep, MSG_DONTWAIT);
                 s.error = 0;
-                msleep(500);
             }
         }
         return NULL;
@@ -93,6 +97,7 @@ namespace DiscoveryService
             EndPoint ep = {};
             s.error = 0;
             socket_send_endpoint(&s, client_msg, &braodcast_ep, 0);
+            msleep(1);
             int read = socket_receive_endpoint(&s, buffer, &ep, MSG_DONTWAIT);
             if (read < 0)
             {
@@ -102,7 +107,7 @@ namespace DiscoveryService
             if (str_cmp(msg, server_msg) == 0)
             {
                 printf(str_fmt "\n", str_args(buffer));
-                msleep(500);
+                sleep(60);
             }
         }
         return NULL;
