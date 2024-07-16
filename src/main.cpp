@@ -37,6 +37,8 @@
 #include <signal.h>
 
 
+#define INITIAL_PORT 35512
+
 bool key_hit()
 {
   struct timeval tv = {0, 0};
@@ -48,9 +50,8 @@ bool key_hit()
 
 int server(int port)
 {
-  signal(SIGPIPE, SIG_IGN);
-  printf("Server Side\n\n");
-  help_msg(NULL);
+  printf("Manager\n");
+  help_msg_server();
   DiscoveryService::start_server(port);
   std::vector<MachineEndpoint> clients = {};
   Socket s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -120,7 +121,8 @@ finally:
 
 int client(int port)
 {
-  printf("Client Side\n\n");
+  printf("Participant\n");
+  help_msg_client();
   DiscoveryService::start_client(port);
   TCP socket = {};
   bool connected = false;
@@ -177,13 +179,14 @@ finally:
 
 int main(int argc, char **argv)
 {
-  if (argc <= 1)
+  if (argc < 1 || argc > 2)
   {
-    printf("Usage: main <manager> if manager else <> [port (for testing)]\n");
+    printf("Usage: main <manager> if manager else <> for participant\n");
     return -1;
   }
-  bool is_server = !strcmp(argv[1], "manager");
-  int port = is_server ? atoi(argv[2]) : atoi(argv[1]);
+  bool is_server = argc > 1 && !strcmp(argv[1], "manager");
+  //int port = is_server ? atoi(argv[2]) : atoi(argv[1]);
+  int port = INITIAL_PORT;
 
   ssize_t exit_code;
   if (is_server)

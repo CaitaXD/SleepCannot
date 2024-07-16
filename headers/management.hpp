@@ -49,7 +49,8 @@ participant_t get_participant(const ParticipantTable& table, const std::string& 
 
 // Display an individual participant
 void print_participant(const participant_t& p) {
-    std::cout << p.hostname << "\t\t";
+    char format_name = p.hostname.size() < 8 ? '\t' : '0';
+    std::cout << p.hostname << "\t" << format_name;
     std::cout << p.mac.mac_str << "\t";
     std::cout << p.ip << "\t";
     std::cout << (p.status ? "awaken" : "ASLEEP");

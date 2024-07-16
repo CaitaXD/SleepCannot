@@ -90,6 +90,7 @@ void *help_msg(void *args);
 
 #ifdef COMMANDS_IMPLEMENTATION
 
+// Theese are not used in the program, only in testing
 Command commands[COMMAND_COUNT] = {
     // clang-format off
     [COMMAND_WAKE_ON_LAN] = {
@@ -247,8 +248,8 @@ void *exit_program(void *args)
 void *help_msg(void *args)
 {
   (void)args;
-  for (size_t i = 0; i < COMMAND_COUNT; i++)
-  {
+  printf("\nCommands used for testing and debugging:\n");
+  for (size_t i = 0; i < COMMAND_COUNT; i++) {
     printf("[COMMAND]: " str_fmt "\n", str_args(commands[i].cmd));
     if (commands[i].description)
     {
@@ -263,8 +264,21 @@ void *help_msg(void *args)
   return NULL;
 }
 
-int parse_command(Clients clients, Socket *s)
-{
+void *help_msg_server() {
+  printf("[COMMAND]\tWAKEUP <hostname>\n");
+  printf("[DESCRIPTION]\tSends a WoL packet to <hostname> connected to the service.\n\n");
+
+  return NULL;
+}
+
+void *help_msg_client() {
+  printf("[COMMAND]\tEXIT\n");
+  printf("[DESCRIPTION]\tExists the program.\n\n");
+
+  return NULL;
+}
+
+int parse_command(Clients clients, Socket *s) {
   int exit_code = 0;
   char bff[MAXLINE];
   Str buffer = STR(bff);

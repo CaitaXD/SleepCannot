@@ -57,8 +57,28 @@
     "semaphore": "cpp",
     "stop_token": "cpp",
     "thread": "cpp",
+<<<<<<< HEAD
     "set": "cpp",
     "unordered_set": "cpp"
+=======
+    "csignal": "cpp",
+    "cstring": "cpp",
+    "any": "cpp",
+    "bitset": "cpp",
+    "codecvt": "cpp",
+    "complex": "cpp",
+    "list": "cpp",
+    "map": "cpp",
+    "set": "cpp",
+    "unordered_set": "cpp",
+    "optional": "cpp",
+    "future": "cpp",
+    "iomanip": "cpp",
+    "sstream": "cpp",
+    "cinttypes": "cpp",
+    "typeindex": "cpp",
+    "variant": "cpp"
+>>>>>>> a6249ed9f1e58602e394fea94d872c171aa00858
   },
   "C_Cpp_Runner.cCompilerPath": "gcc",
   "C_Cpp_Runner.cppCompilerPath": "g++",
