@@ -33,6 +33,9 @@
 #undef DISCOVERY_SERVICE_IMPLEMENTATION
 
 #include "../headers/management.hpp"
+#include "../headers/tcp.hpp"
+#include <signal.h>
+
 
 bool key_hit()
 {
@@ -45,10 +48,11 @@ bool key_hit()
 
 int server(int port)
 {
+  signal(SIGPIPE, SIG_IGN);
   printf("Server Side\n\n");
   help_msg(NULL);
   DiscoveryService::start_server(port);
-  std::vector<EndPoint> clients = {};
+  std::vector<MachineEndpoint> clients = {};
   Socket s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   // Control reading and writting to manager table
   ParticipantTable participants;
@@ -71,7 +75,7 @@ int server(int port)
     MachineEndpoint ep = {};
     if (DiscoveryService::discovered_endpoints.dequeue(ep))
     {
-      if(std::find_if(clients.begin(), clients.end(), [&ep](EndPoint other){ return epcmp_inaddr(&ep, &other); }) == clients.end())
+      if (std::find_if(clients.begin(), clients.end(), [&ep](EndPoint other) { return epcmp_inaddr(&ep, &other); }) == clients.end())
       {
       	// Adds new client to the management table
         char* ip = inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr);
@@ -80,9 +84,35 @@ int server(int port)
         clients.push_back(ep);
       }
     }
+
+    int next_port = port + 1;
+    for(auto [hostname, participant] : participants) {
+      if(participant.status) {
+          TCP socket = {};
+          socket.socket();
+          std::cout << "Binding to port " << next_port << std::endl;
+          int r = socket.bind(next_port);
+          if (r < 0) {
+            goto finally;
+          }
+          std::cout << "Listening" << std::endl;
+          r = socket.listen();
+          if (r < 0) {
+            goto finally;
+          }
+          EndPoint sep = {};
+          r = socket.accept(sep);
+          if (r < 0) {
+            goto finally;
+          }
+          std::cout << "Accepted connection" << std::endl;  
+          wake_on_lan(socket.clientSocket, participants, hostname, mutex_data);
+          socket.close();
+      }
+    }
   }
 finally:
-  table_readers[0].join();  
+  table_readers[0].join();
   DiscoveryService::stop();
   s.error |= close(s.fd);
   return s.error;
@@ -92,10 +122,55 @@ int client(int port)
 {
   printf("Client Side\n\n");
   DiscoveryService::start_client(port);
+  TCP socket = {};
+  bool connected = false;
   while (1)
   {
+    if (key_hit())
+    {
+      char buffer[MAXLINE];
+      if (fgets(buffer, MAXLINE, stdin) != NULL)
+      {
+        Str exit_cmd = STR("exit");
+        if (str_starts_with(str_take(STR(buffer), strlen(buffer)), exit_cmd))
+        {
+          break;
+        }
+      }
+    }
+
+    MachineEndpoint ep = {};
+    if (!connected && DiscoveryService::discovered_endpoints.dequeue(ep))
+    {
+      ep = ep.with_port(ep.get_port() + 1);
+      std::cout << "My Server Endpoint: " << ep.to_string() << std::endl;
+      if(socket.socket() < 0) {
+        goto finally;
+      }
+      if(socket.connect(ip_endpoint(INADDR_ANY, port + 1)) < 0) {
+        goto finally;
+      }
+      connected = true;
+    }
+    if (!connected) {
+      continue;
+    }
+    std::string cmd;
+    int r = socket.recv(cmd);
+    std::cout << "Read " << r << " Received command: " << cmd << std::endl;
+    if (r < 0)
+    {
+      goto finally;
+    }
+    if (cmd == "exit")
+    {
+      std::cout << "Exiting..." << std::endl;
+      goto finally;
+    }
     msleep(1000);
   }
+finally:
+  socket.close();
   DiscoveryService::stop();
   return 0;
 }

@@ -18,6 +18,26 @@ typedef struct EndPoint
 {
   struct sockaddr addr;
   socklen_t addrlen;
+
+  std::string to_string() const
+  {
+    auto ip = inet_ntoa(((struct sockaddr_in *)&addr)->sin_addr);
+    return std::string(ip) + ":" + std::to_string(ntohs(((struct sockaddr_in *)&addr)->sin_port));
+  }
+
+  EndPoint with_port(int port) const
+  {
+    EndPoint ep = *this;
+    ep.addrlen = sizeof(ep.addr);
+    struct sockaddr_in *addr = (struct sockaddr_in *)&ep.addr;
+    addr->sin_port = htons(port);
+    return ep;
+  }
+
+  int get_port() const
+  {
+    return ntohs(((struct sockaddr_in *)&addr)->sin_port);
+  }
 } EndPoint;
 
 typedef struct Socket
@@ -82,7 +102,6 @@ EndPoint ip_broadcast(int port)
       .addrlen = sizeof(struct sockaddr_in),
   };
 }
-
 
 ssize_t socket_bind(Socket *s, EndPoint endpoint)
 {

@@ -130,42 +130,27 @@ void show_status(const ParticipantTable& table, mutex_data_t& mutex_data, int& r
     }
 }
 
-
-
-// Function to send a magic packet using TCP
-void wake_on_lan(const ParticipantTable& table, const std::string& hostname, mutex_data_t& mutex_data) {
-    participant_t p = get_participant(table, hostname, mutex_data, 0);
+//wol function
+void wake_on_lan(int client_socket, const ParticipantTable& table, const std::string& hostname, mutex_data_t& mutex_data) {
+    int read_count = 0;
+    participant_t p = get_participant(table, hostname, mutex_data, read_count);
     if (p.hostname == "None") {
         std::cout << "Participant not found" << std::endl;
         return;
     }
-    if (p.status) {
-        std::cout << "Participant is already awake" << std::endl;
+    // if (p.status) {
+    //     std::cout << "Participant is already awake" << std::endl;
+    //     return;
+    // }
+    // send packet
+    std::cout << "Sending magic packet to " << p.hostname << std::endl;
+    std::string magic_packet = "wakeup " + p.hostname;
+    std::cout << client_socket << std::endl;
+    int r = write(client_socket, magic_packet.c_str(), magic_packet.size());
+    if (r < 0) {
+        perror("wake_on_lan");
         return;
     }
-
-    // Initialize TCP client
-    TCP tcp_client;
-    if (tcp_client.socket() != 0) {
-        std::cerr << "Error creating socket" << std::endl;
-        return;
-    }
-
-    if (tcp_client.connect(p.ip, 9) != 0) { // Port 9 is typically used for Wake-on-LAN
-        std::cerr << "Error connecting to " << p.ip << std::endl;
-        return;
-    }
-
-    // Send magic packet
-    std::string magic_packet = "Your magic packet data here"; // Replace with actual magic packet data
-    if (tcp_client.send(magic_packet) != 0) {
-        std::cerr << "Error sending magic packet to " << p.hostname << std::endl;
-        return;
-    }
-
-    std::cout << "Sent magic packet to " << p.hostname << std::endl;
-
-    tcp_client.close();
 }
 
 
