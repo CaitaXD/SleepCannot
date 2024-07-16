@@ -20,9 +20,9 @@
 #include "../headers/DataStructures/str.h"
 #undef STR_IMPLEMENTATION
 
-#define SOCKET_IMPLEMENTATION
+#define UdpSocket_IMPLEMENTATION
 #include "../headers/Sockets.h"
-#undef SOCKET_IMPLEMENTATION
+#undef UdpSocket_IMPLEMENTATION
 
 #define COMMANDS_IMPLEMENTATION
 #include "../headers/commands.h"
@@ -33,7 +33,7 @@
 #undef DISCOVERY_SERVICE_IMPLEMENTATION
 
 #include "../headers/management.hpp"
-#include "../headers/tcp.hpp"
+#include "../headers/Socket.hpp"
 #include <signal.h>
 
 
@@ -49,12 +49,12 @@ bool key_hit()
 
 int server(int port)
 {
-  int tcp_port = port + 1;
+  int Socket_port = port + 1;
   printf("Manager\n");
   help_msg_server();
   DiscoveryService::start_server(port);
   std::vector<MachineEndpoint> clients = {};
-  Socket s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  UdpSocket s = UdpSocket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   // Control reading and writting to manager table
   ParticipantTable participants;
   mutex_data_t mutex_data = {std::mutex(), std::condition_variable(), false, 1, {0}};
@@ -89,25 +89,25 @@ int server(int port)
 
     std::unique_lock<std::mutex> lock(mutex_data.mutex);
     std::string packet{}; 
-    struct timeval timeout;      
-    timeout.tv_sec = 3;
-    timeout.tv_usec = 0;
+    //struct timeval timeout;      
+    //timeout.tv_sec = 3;
+    //timeout.tv_usec = 0;
     for (auto [hostname, participant] : participants)
     {
       if (participant.status)
       {
         packet.clear();
         EndPoint sep = {};
-        TCP socket{};
-        TCP cli{};
+        Socket socket{};
+        Socket cli{};
         socket.socket();
         socket.set_option(SO_REUSEADDR, 1);
-        //socket.set_option(SO_RCVTIMEO, &timeout);
+        //UdpSocket.set_option(SO_RCVTIMEO, &timeout);
         int r;
         int max_tries = 100;
         do
         {
-          r = socket.bind(tcp_port);
+          r = socket.bind(Socket_port);
           msleep(100);
         } while (errno == EADDRINUSE && max_tries--);
         if (r < 0)
@@ -125,7 +125,7 @@ int server(int port)
         {
           goto finally_1;
         }
-        cli.sockfd = socket.clientSocket;
+        cli.sockfd = socket.client_socket;
         cli.send("probe");
         // r = cli.recv(&packet);
         // if (errno == ETIMEDOUT)
@@ -156,7 +156,7 @@ int client(int port)
   printf("Participant\n");
   help_msg_client();
   DiscoveryService::start_client(port);
-  TCP socket = {};
+  Socket socket = {};
   bool connected = false;
   while (1)
   {
@@ -180,8 +180,8 @@ int client(int port)
     {
       std::cout << "Manager Endpoint: " << ep.to_string() << std::endl;
       int max_tries = 100;
-      int tcp_port = ep.get_port() + 1;
-      ep = ep.with_port(tcp_port);
+      int Socket_port = ep.get_port() + 1;
+      ep = ep.with_port(Socket_port);
       r = socket.socket();
       if (r < 0)
       {

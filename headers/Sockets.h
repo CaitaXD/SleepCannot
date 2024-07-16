@@ -1,5 +1,5 @@
-#ifndef SOCKET_H_
-#define SOCKET_H_
+#ifndef UdpSocket_H_
+#define UdpSocket_H_
 
 #include "DataStructures/str.h"
 #include <arpa/inet.h>
@@ -40,37 +40,37 @@ typedef struct EndPoint
   }
 } EndPoint;
 
-typedef struct Socket
+typedef struct UdpSocket
 {
   ssize_t error;
   int fd;
   sa_family_t domain;
   int type;
   int protocol;
-} Socket;
+} UdpSocket;
 
 // Create a internet protocol endpoint with a specific address and port
 EndPoint ip_endpoint(in_addr_t address, int port);
 // Compare two endpoints by their address
 int epcmp_inaddr(EndPoint *a, EndPoint *b);
-// Create a new socket with a specific domain, type and protocol
-Socket socket_create(sa_family_t domain, int type, int protocol);
-// Bind a socket to a specific endpoint
-ssize_t socket_bind(Socket *s, EndPoint endpoint);
+// Create a new UdpSocket with a specific domain, type and protocol
+UdpSocket UdpSocket_create(sa_family_t domain, int type, int protocol);
+// Bind a UdpSocket to a specific endpoint
+ssize_t UdpSocket_bind(UdpSocket *s, EndPoint endpoint);
 // Send a message to a specific endpoint.
-// Used for non conection oriented sockets
-ssize_t socket_send_endpoint(Socket *s, Str message, EndPoint *ep, int flags);
+// Used for non conection oriented UdpSockets
+ssize_t UdpSocket_send_endpoint(UdpSocket *s, Str message, EndPoint *ep, int flags);
 // Receive a message from a specific endpoint.
-// Used for non conection oriented sockets
-ssize_t socket_receive_endpoint(Socket *s, Str buffer, EndPoint *ep, int flags);
+// Used for non conection oriented UdpSockets
+ssize_t UdpSocket_receive_endpoint(UdpSocket *s, Str buffer, EndPoint *ep, int flags);
 
-#define EORROR_SOCKET_NEW -1
-#define ERROR_SOCKET_BIND -2
-#define ERROR_SOCKET_SEND -3
-#define ERROR_SOCKET_RECEIVE -4
+#define EORROR_UdpSocket_NEW -1
+#define ERROR_UdpSocket_BIND -2
+#define ERROR_UdpSocket_SEND -3
+#define ERROR_UdpSocket_RECEIVE -4
 
-#endif // SOCKET_H_
-#ifdef SOCKET_IMPLEMENTATION
+#endif // UdpSocket_H_
+#ifdef UdpSocket_IMPLEMENTATION
 
 in_addr_t to_in_adrr(unsigned char a, unsigned char b, unsigned char c, unsigned char d)
 {
@@ -116,7 +116,7 @@ EndPoint ip_broadcast(int port)
   };
 }
 
-ssize_t socket_bind(Socket *s, EndPoint endpoint)
+ssize_t UdpSocket_bind(UdpSocket *s, EndPoint endpoint)
 {
   if (s->error != 0)
   {
@@ -126,15 +126,15 @@ ssize_t socket_bind(Socket *s, EndPoint endpoint)
   int r = bind(s->fd, &endpoint.addr, endpoint.addrlen);
   if (r < 0)
   {
-    s->error = ERROR_SOCKET_BIND;
+    s->error = ERROR_UdpSocket_BIND;
   }
 
   return r;
 }
 
-Socket socket_create(sa_family_t domain, int type, int protocol)
+UdpSocket UdpSocket_create(sa_family_t domain, int type, int protocol)
 {
-  Socket s = {
+  UdpSocket s = {
       .error = 0,
       .fd = 0,
       .domain = domain,
@@ -146,13 +146,13 @@ Socket socket_create(sa_family_t domain, int type, int protocol)
   s.fd = sockfd;
   if (sockfd < 0)
   {
-    s.error = EORROR_SOCKET_NEW;
+    s.error = EORROR_UdpSocket_NEW;
     return s;
   }
   return s;
 }
 
-ssize_t socket_send_endpoint(Socket *s, Str message, EndPoint *ep, int flags)
+ssize_t UdpSocket_send_endpoint(UdpSocket *s, Str message, EndPoint *ep, int flags)
 {
   if (s->error)
   {
@@ -163,13 +163,13 @@ ssize_t socket_send_endpoint(Socket *s, Str message, EndPoint *ep, int flags)
 
   if (n < 0)
   {
-    s->error = ERROR_SOCKET_SEND;
+    s->error = ERROR_UdpSocket_SEND;
   }
 
   return n;
 }
 
-ssize_t socket_receive_endpoint(Socket *s, Str buffer, EndPoint *ep, int flags)
+ssize_t UdpSocket_receive_endpoint(UdpSocket *s, Str buffer, EndPoint *ep, int flags)
 {
   if (s->error)
   {
@@ -179,7 +179,7 @@ ssize_t socket_receive_endpoint(Socket *s, Str buffer, EndPoint *ep, int flags)
   ssize_t n = recvfrom(s->fd, (char *)str_unpack(buffer), flags, &ep->addr, &ep->addrlen);
   if (n < 0 && errno != EAGAIN)
   {
-    s->error = ERROR_SOCKET_RECEIVE;
+    s->error = ERROR_UdpSocket_RECEIVE;
   }
   return n;
 }
@@ -192,4 +192,4 @@ int epcmp_inaddr(EndPoint *a, EndPoint *b)
   return a_in->sin_addr.s_addr - b_in->sin_addr.s_addr;
 }
 
-#endif // SOCKET_IMPLEMENTATION
+#endif // UdpSocket_IMPLEMENTATION

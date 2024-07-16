@@ -3,7 +3,7 @@
     "dynamicarray.h": "c",
     "stdio.h": "c",
     "xtr1common": "c",
-    "sockets.h": "c",
+    "Sockets.h": "c",
     "vector": "cpp",
     "ostream": "cpp",
     "cctype": "cpp",

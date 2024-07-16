@@ -8,7 +8,7 @@
 #include <mutex>
 #include <condition_variable>
 #include "commands.h"
-#include "tcp.hpp"
+#include "Socket.hpp"
 
 // SHOULD NOT BE HERE, MOVE ELSEWHERE (i was having compiler issues)
 // #define MAC_ADDR_MAX 6
@@ -121,7 +121,7 @@ void show_status(const ParticipantTable& table, mutex_data_t& mutex_data, int& r
 }
 
 //wol function
-void wake_on_lan(int client_socket, participant_t participant) {
+void wake_on_lan(int client_UdpSocket, participant_t participant) {
     if (participant.hostname == "None") {
         std::cout << "Participant not found" << std::endl;
         return;
@@ -132,7 +132,7 @@ void wake_on_lan(int client_socket, participant_t participant) {
     // }
     // send packet
     std::string magic_packet = "wakeup " + participant.hostname;
-    int r = send(client_socket, magic_packet.c_str(), magic_packet.size(), 0);
+    int r = send(client_UdpSocket, magic_packet.c_str(), magic_packet.size(), 0);
     if (r < 0) {
         perror("wake_on_lan");
         return;

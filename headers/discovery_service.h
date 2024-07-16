@@ -52,7 +52,7 @@ static inline int msleep(long msec)
 
 namespace DiscoveryService
 {
-    Socket s;
+    UdpSocket s;
     pthread_t thread;
 
     void *sever_callback(void *data)
@@ -65,7 +65,7 @@ namespace DiscoveryService
         {
             MachineEndpoint ep = {};
             bzero(buffer, MAXLINE);
-            read = socket_receive_endpoint(&s, buffer_view, &ep, MSG_WAITALL);
+            read = UdpSocket_receive_endpoint(&s, buffer_view, &ep, MSG_WAITALL);
             if (errno != 0)
             {
                 perror("Error");
@@ -98,7 +98,7 @@ namespace DiscoveryService
                 ep.hostname = string_from_str(client_hostname);
                 
                 discovered_endpoints.enqueue(ep);
-                socket_send_endpoint(&s, server_msg, &ep, MSG_DONTWAIT);
+                UdpSocket_send_endpoint(&s, server_msg, &ep, MSG_DONTWAIT);
                 s.error = 0;
             }
         }
@@ -128,9 +128,9 @@ namespace DiscoveryService
             buffer.append(mac.mac_str, MAC_STR_MAX);
 
             Str buffer_view = str_from_string(buffer);
-            socket_send_endpoint(&s, buffer_view, &braodcast_ep, 0);
+            UdpSocket_send_endpoint(&s, buffer_view, &braodcast_ep, 0);
             msleep(1);
-            int read = socket_receive_endpoint(&s, buffer_view, &ep, 0);
+            int read = UdpSocket_receive_endpoint(&s, buffer_view, &ep, 0);
             if (read < 0)
             {
                 continue;
@@ -151,7 +151,7 @@ namespace DiscoveryService
 
     void start_server(int port)
     {
-        s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        s = UdpSocket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         int broadcastEnable = 1;
         int ret = setsockopt(s.fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
         //printf("%d", ret);
@@ -160,18 +160,18 @@ namespace DiscoveryService
             perror("start_server");
             return;
         }
-        socket_bind(&s, ip_endpoint(INADDR_ANY, port));
+        UdpSocket_bind(&s, ip_endpoint(INADDR_ANY, port));
         pthread_create(&thread, NULL, sever_callback, NULL);
     }
 
     void start_client(int port)
     {
-        s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        s = UdpSocket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         int broadcastEnable = 1;
         int ret = setsockopt(s.fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
         if (ret < 0)
             perror("start_client");
-        socket_bind(&s, ip_endpoint(INADDR_ANY, port));
+        UdpSocket_bind(&s, ip_endpoint(INADDR_ANY, port));
         pthread_create(&thread, NULL, client_callback, (void *)(intptr_t)port);
     }
 
@@ -179,7 +179,7 @@ namespace DiscoveryService
     {
         pthread_cancel(thread);
         close(s.fd);
-        s = Socket{};
+        s = UdpSocket{};
     }
 }
 #endif // DISCOVERY_SERVICE_IMPLEMENTATION

@@ -5,7 +5,7 @@
 #include "DataStructures/str.h"
 #include <set>
 #include <vector>
-#include "tcp.hpp"
+#include "Socket.hpp"
 #include <mutex>
 #include <condition_variable>
 
@@ -90,7 +90,7 @@ struct ping_client_args
 
 struct wake_on_lan_args
 {
-  TCP *s;
+  Socket *s;
   participant_t participant;
 };
 
@@ -206,7 +206,7 @@ void *ping_client(struct ping_client_args *arg)
     }
     else
     {
-      perror("snprintf error could not read socket address string");
+      perror("snprintf error could not read UdpSocket address string");
       return (void *)-1;
     }
   }
@@ -276,7 +276,7 @@ int parse_command(ParticipantTable &participants, std::mutex &mutex)
   ssize_t read = strlen(bff);
   Str cmd = str_trim(str_take(buffer, read));
   enum CommandType cmd_type = get_command_type(cmd);
-  void *args = NULL;
+  //void *args = NULL;
   std::lock_guard<std::mutex> lock(mutex);
   switch (cmd_type)
   {
@@ -292,11 +292,11 @@ int parse_command(ParticipantTable &participants, std::mutex &mutex)
     auto participant = participants.at(host_name);
     std::string magic_packet = "wakeup " + host_name;
     EndPoint broadcast = ip_broadcast(INITIAL_PORT + 2);
-    Socket s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if(socket_bind(&s, ip_endpoint(INADDR_ANY, INITIAL_PORT + 2)) < 0){
+    UdpSocket s = UdpSocket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if(UdpSocket_bind(&s, ip_endpoint(INADDR_ANY, INITIAL_PORT + 2)) < 0){
       perror("bind");
     }
-    int r = socket_send_endpoint(&s, str_from_string(magic_packet), &broadcast, 0);
+    int r = UdpSocket_send_endpoint(&s, str_from_string(magic_packet), &broadcast, 0);
     if (r < 0)
     {
       perror("wake_on_lan");
