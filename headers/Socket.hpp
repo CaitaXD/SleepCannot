@@ -18,7 +18,7 @@ public:
   int sockfd;
   int client_socket;
 
-  int socket();
+  int open();
   template <typename T>
   int set_option(int option, T value);
   template <typename T>
@@ -27,8 +27,8 @@ public:
   int connect(const std::string &ip, int port);
   int send(const std::string &payload, int flags = 0);
   int recv(std::string *payload, int flags = 0);
-  int sendto(std::string &payload, EndPoint &ep, int flags = 0);
-  int recvfrom(std::string* payload, EndPoint &ep, int flags = 0);
+  int send(std::string &payload, EndPoint &ep, int flags = 0);
+  int recv(std::string* payload, EndPoint &ep, int flags = 0);
   int close();
   int bind(int port);
   int bind(EndPoint ep);
@@ -57,7 +57,7 @@ Socket::~Socket()
   }
 }
 
-int Socket::socket()
+int Socket::open()
 {
   sockfd = ::socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd < 0)
@@ -187,7 +187,7 @@ int Socket::accept(EndPoint &ep)
   return client_socket;
 }
 
-int Socket::recvfrom(std::string *payload, EndPoint &ep, int flags)
+int Socket::recv(std::string *payload, EndPoint &ep, int flags)
 {
   ep.addrlen = sizeof(sockaddr_in);
   char buffer[1024] = {0};
@@ -200,7 +200,7 @@ int Socket::recvfrom(std::string *payload, EndPoint &ep, int flags)
   return bytes_received;
 }
 
-int Socket::sendto(std::string &payload, EndPoint &ep, int flags)
+int Socket::send(std::string &payload, EndPoint &ep, int flags)
 {
   ep.addrlen = sizeof(sockaddr_in);
   return ::sendto(sockfd, payload.c_str(), payload.size(), flags, &ep.addr, ep.addrlen);

@@ -100,7 +100,7 @@ int server(int port)
         EndPoint sep = {};
         Socket socket{};
         Socket cli{};
-        socket.socket();
+        socket.open();
         socket.set_option(SO_REUSEADDR, 1);
         //UdpSocket.set_option(SO_RCVTIMEO, &timeout);
         int r;
@@ -182,7 +182,7 @@ int client(int port)
       int max_tries = 100;
       int Socket_port = ep.get_port() + 1;
       ep = ep.with_port(Socket_port);
-      r = socket.socket();
+      r = socket.open();
       if (r < 0)
       {
         goto finally_1;
