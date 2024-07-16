@@ -5,10 +5,15 @@
 #include "DataStructures/str.h"
 #include <set>
 #include <vector>
+#include "tcp.hpp"
+#include <mutex>
+#include <condition_variable>
+
 #define MAC_ADDR_MAX 6
 #define MAC_STR_MAX 64
 #define MAC_ADDRES_FILE "/sys/class/net/eth0/address"
 #define MAXLINE 1024
+#define INITIAL_PORT 35512
 
 Str client_msg = STR("General, Kenoby, you are a bold one");
 Str server_msg = STR("Hello there!");
@@ -18,6 +23,18 @@ typedef struct
   unsigned char mac_addr[MAC_ADDR_MAX];
   char mac_str[MAC_STR_MAX];
 } MacAddress;
+
+// Represents a participant using the service
+typedef struct participant_t
+{
+  std::string hostname;
+  MacAddress mac;
+  std::string ip;
+  bool status; // true means awake, false means asleep
+} participant_t;
+
+// Represents the table of users using the service
+typedef std::unordered_map<std::string, participant_t> ParticipantTable;
 
 struct MachineEndpoint : EndPoint
 {
@@ -73,9 +90,8 @@ struct ping_client_args
 
 struct wake_on_lan_args
 {
-  Socket *s;
-  Clients clients;
-  int id;
+  TCP *s;
+  participant_t participant;
 };
 
 MacAddress get_mac();
@@ -94,10 +110,10 @@ void *help_msg(void *args);
 Command commands[COMMAND_COUNT] = {
     // clang-format off
     [COMMAND_WAKE_ON_LAN] = {
-      cmd : STR("Execute order 66"),
+      cmd : STR("WAKEUP"),
       description : "Sends a magic packet to the client to wake it up",
       fmt : "%d",
-      callback : (Callback)cmd_wake_on_lan
+      callback : NULL
     },
     [COMMAND_EXIT] = {
       cmd : STR("The negotiations were short"),
@@ -146,7 +162,9 @@ enum CommandType get_command_type(Str command)
 
 int command_exec(enum CommandType cmd, void *command_args)
 {
-  return (intptr_t)commands[cmd].callback(command_args);
+  if (commands[cmd].callback != nullptr)
+    return (intptr_t)commands[cmd].callback(command_args);
+  return 0;
 }
 
 void *list_clients(struct list_clients_args *args)
@@ -200,38 +218,6 @@ void *ping_client(struct ping_client_args *arg)
   return NULL;
 }
 
-void *cmd_wake_on_lan(struct wake_on_lan_args *args)
-{
-  int id = args->id;
-  Clients clients = args->clients;
-  Socket *s = args->s;
-
-  if ((size_t)id < clients.size())
-  {
-    EndPoint cep = clients[id];
-    socket_send_endpoint(s, commands[COMMAND_WAKE_ON_LAN].cmd, &cep, 0);
-    char bff[MAXLINE];
-    Str buffer = STR(bff);
-    int read = socket_receive_endpoint(s, buffer, &cep, 0);
-    if (read <= 0)
-    {
-      return (void *)-1;
-    }
-
-    MacAddress mac = *(MacAddress *)buffer.data;
-    Str mac_str = STR(mac.mac_str);
-    printf("MAC: " str_fmt "\n", str_args(mac_str));
-    printf("[WARNING] WoL Not implemented!\n");
-    return NULL;
-  }
-  else
-  {
-    fprintf(stderr, "[ERROR] Invalid client id %d\n", id);
-  }
-
-  return NULL;
-}
-
 void *clear_screen(void *args)
 {
   (void)args;
@@ -249,7 +235,8 @@ void *help_msg(void *args)
 {
   (void)args;
   printf("\nCommands used for testing and debugging:\n");
-  for (size_t i = 0; i < COMMAND_COUNT; i++) {
+  for (size_t i = 0; i < COMMAND_COUNT; i++)
+  {
     printf("[COMMAND]: " str_fmt "\n", str_args(commands[i].cmd));
     if (commands[i].description)
     {
@@ -264,21 +251,24 @@ void *help_msg(void *args)
   return NULL;
 }
 
-void *help_msg_server() {
+void *help_msg_server()
+{
   printf("[COMMAND]\tWAKEUP <hostname>\n");
   printf("[DESCRIPTION]\tSends a WoL packet to <hostname> connected to the service.\n\n");
 
   return NULL;
 }
 
-void *help_msg_client() {
+void *help_msg_client()
+{
   printf("[COMMAND]\tEXIT\n");
   printf("[DESCRIPTION]\tExists the program.\n\n");
 
   return NULL;
 }
 
-int parse_command(Clients clients, Socket *s) {
+int parse_command(ParticipantTable &participants, std::mutex &mutex)
+{
   int exit_code = 0;
   char bff[MAXLINE];
   Str buffer = STR(bff);
@@ -287,49 +277,33 @@ int parse_command(Clients clients, Socket *s) {
   Str cmd = str_trim(str_take(buffer, read));
   enum CommandType cmd_type = get_command_type(cmd);
   void *args = NULL;
+  std::lock_guard<std::mutex> lock(mutex);
   switch (cmd_type)
   {
   case COMMAND_HELP:
   case COMMAND_EXIT:
   case COMMAND_CLEAR:
-  {
-    break;
-  }
   case COMMAND_LIST:
-  {
-    struct list_clients_args list_args = {.clients = clients};
-    args = static_cast<void *>(&list_args);
-    break;
-  }
   case COMMAND_PING:
-  {
-    int id;
-    Str cmd_args = str_trim(str_skip(cmd, commands[cmd_type].cmd.len));
-    if (sscanf(cmd_args.data, commands[cmd_type].fmt, &id) == 1)
-    {
-      struct ping_client_args client_args = {.clients = clients, .id = id};
-      args = static_cast<void *>(&client_args);
-    }
-    else
-    {
-      exit_code = -1;
-      goto finally;
-    }
-    break;
-  }
   case COMMAND_WAKE_ON_LAN:
   {
-    int id = 0;
     Str cmd_args = str_trim(str_skip(cmd, commands[cmd_type].cmd.len));
-    if (sscanf(cmd_args.data, commands[cmd_type].fmt, &id) == 1)
+    auto host_name = string_from_str(str_take(cmd_args, cmd_args.len));
+    auto participant = participants.at(host_name);
+    std::string magic_packet = "wakeup " + host_name;
+    EndPoint broadcast = ip_broadcast(INITIAL_PORT + 2);
+    Socket s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if(socket_bind(&s, ip_endpoint(INADDR_ANY, INITIAL_PORT + 2)) < 0){
+      perror("bind");
+    }
+    int r = socket_send_endpoint(&s, str_from_string(magic_packet), &broadcast, 0);
+    if (r < 0)
     {
-      struct wake_on_lan_args wol_args = {.s = s, .clients = clients, .id = id};
-      args = static_cast<void *>(&wol_args);
+      perror("wake_on_lan");
     }
     else
     {
-      exit_code = -1;
-      goto finally;
+      std::cout << "[INFO] Sent magic packet to " << host_name << std::endl;
     }
     break;
   }
@@ -337,9 +311,8 @@ int parse_command(Clients clients, Socket *s) {
     fprintf(stderr, "[ERROR] Invalid command " str_fmt "\n", str_args(cmd));
     goto finally;
   }
-  exit_code |= command_exec(cmd_type, args);
-
 finally:
+  std::lock_guard<std::mutex> unlock(mutex);
   return exit_code;
 }
 

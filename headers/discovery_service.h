@@ -130,7 +130,7 @@ namespace DiscoveryService
             Str buffer_view = str_from_string(buffer);
             socket_send_endpoint(&s, buffer_view, &braodcast_ep, 0);
             msleep(1);
-            int read = socket_receive_endpoint(&s, buffer_view, &ep, MSG_DONTWAIT);
+            int read = socket_receive_endpoint(&s, buffer_view, &ep, 0);
             if (read < 0)
             {
                 continue;
@@ -171,7 +171,7 @@ namespace DiscoveryService
         int ret = setsockopt(s.fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
         if (ret < 0)
             perror("start_client");
-        //socket_bind(&s, ip_endpoint(INADDR_ANY, port));
+        socket_bind(&s, ip_endpoint(INADDR_ANY, port));
         pthread_create(&thread, NULL, client_callback, (void *)(intptr_t)port);
     }
 

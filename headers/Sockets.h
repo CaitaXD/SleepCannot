@@ -90,6 +90,19 @@ EndPoint ip_endpoint(in_addr_t address, int port)
   };
 }
 
+EndPoint ip_endpoint(const std::string &ip, int port)
+{
+  struct sockaddr_in sockaddr = {};
+  sockaddr.sin_family = AF_INET;
+  sockaddr.sin_addr.s_addr = inet_addr(ip.c_str());
+  sockaddr.sin_port = htons(port);
+
+  return (EndPoint){
+      .addr = *(struct sockaddr *)&sockaddr,
+      .addrlen = sizeof(struct sockaddr_in),
+  };
+}
+
 EndPoint ip_broadcast(int port)
 {
   struct sockaddr_in sockaddr = {};

@@ -37,7 +37,6 @@
 #include <signal.h>
 
 
-#define INITIAL_PORT 35512
 
 bool key_hit()
 {
@@ -50,6 +49,7 @@ bool key_hit()
 
 int server(int port)
 {
+  int tcp_port = port + 1;
   printf("Manager\n");
   help_msg_server();
   DiscoveryService::start_server(port);
@@ -66,7 +66,7 @@ int server(int port)
   {
     if (key_hit())
     {
-      s.error |= parse_command(clients, &s);
+      s.error |= parse_command(participants, mutex_data.mutex);
     }
     if (s.error)
     {
@@ -76,39 +76,71 @@ int server(int port)
     MachineEndpoint ep = {};
     if (DiscoveryService::discovered_endpoints.dequeue(ep))
     {
-      if (std::find_if(clients.begin(), clients.end(), [&ep](EndPoint other) { return epcmp_inaddr(&ep, &other); }) == clients.end())
+      if (std::find_if(clients.begin(), clients.end(), [&ep](EndPoint other)
+                       { return epcmp_inaddr(&ep, &other); }) == clients.end())
       {
-      	// Adds new client to the management table
-        char* ip = inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr);
+        // Adds new client to the management table
+        char *ip = inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr);
         participant_t p = {ep.hostname, ep.mac, ip, true};
-        table_writers[0] = std::thread (add_participant, std::ref(participants), std::ref(p), std::ref(mutex_data));
+        table_writers[0] = std::thread(add_participant, std::ref(participants), std::ref(p), std::ref(mutex_data));
         clients.push_back(ep);
       }
     }
 
-    int next_port = port + 1;
-    for(auto [hostname, participant] : participants) {
-      if(participant.status) {
-          TCP socket = {};
-          socket.socket();
-          std::cout << "Binding to port " << next_port << std::endl;
-          int r = socket.bind(next_port);
-          if (r < 0) {
-            goto finally;
-          }
-          std::cout << "Listening" << std::endl;
-          r = socket.listen();
-          if (r < 0) {
-            goto finally;
-          }
-          EndPoint sep = {};
-          r = socket.accept(sep);
-          if (r < 0) {
-            goto finally;
-          }
-          std::cout << "Accepted connection" << std::endl;  
-          wake_on_lan(socket.clientSocket, participants, hostname, mutex_data);
-          socket.close();
+    std::unique_lock<std::mutex> lock(mutex_data.mutex);
+    std::string packet{}; 
+    struct timeval timeout;      
+    timeout.tv_sec = 3;
+    timeout.tv_usec = 0;
+    for (auto [hostname, participant] : participants)
+    {
+      if (participant.status)
+      {
+        packet.clear();
+        EndPoint sep = {};
+        TCP socket{};
+        TCP cli{};
+        socket.socket();
+        socket.set_option(SO_REUSEADDR, 1);
+        //socket.set_option(SO_RCVTIMEO, &timeout);
+        int r;
+        int max_tries = 100;
+        do
+        {
+          r = socket.bind(tcp_port);
+          msleep(100);
+        } while (errno == EADDRINUSE && max_tries--);
+        if (r < 0)
+        {
+          perror("bind");
+          goto finally_1;
+        }
+        r = socket.listen();
+        if (r < 0)
+        {
+          goto finally_1;
+        }
+        r = socket.accept(sep);
+        if (r < 0)
+        {
+          goto finally_1;
+        }
+        cli.sockfd = socket.clientSocket;
+        cli.send("probe");
+        // r = cli.recv(&packet);
+        // if (errno == ETIMEDOUT)
+        // {
+        //   participant.status = false;
+        // }
+        // else if (packet == "probe")
+        // {
+        //   participant.status = true;
+        // }
+        // else if (r < 0){
+        //   perror("recv");
+        // }
+      finally_1:
+        socket.close();
       }
     }
   }
@@ -142,37 +174,56 @@ int client(int port)
     }
 
     MachineEndpoint ep = {};
-    if (!connected && DiscoveryService::discovered_endpoints.dequeue(ep))
+    std::string cmd;
+    int r = -1;
+    if (!connected && DiscoveryService::discovered_endpoints.peek(ep))
     {
-      ep = ep.with_port(ep.get_port() + 1);
-      std::cout << "My Server Endpoint: " << ep.to_string() << std::endl;
-      if(socket.socket() < 0) {
-        goto finally;
+      std::cout << "Manager Endpoint: " << ep.to_string() << std::endl;
+      int max_tries = 100;
+      int tcp_port = ep.get_port() + 1;
+      ep = ep.with_port(tcp_port);
+      r = socket.socket();
+      if (r < 0)
+      {
+        goto finally_1;
       }
-      if(socket.connect(ip_endpoint(INADDR_ANY, port + 1)) < 0) {
-        goto finally;
+      do
+      {
+        r = socket.connect(ep);
+        msleep(100);
+      } while ((errno == EADDRINUSE || errno == ECONNREFUSED) && max_tries--);
+      if (r < 0)
+      {
+        perror("connect");
+        goto finally_1;
       }
       connected = true;
     }
-    if (!connected) {
+    if (!connected)
+    {
       continue;
     }
-    std::string cmd;
-    int r = socket.recv(cmd);
-    std::cout << "Read " << r << " Received command: " << cmd << std::endl;
-    if (r < 0)
+    r = socket.recv(&cmd);
+    if (r <= 0)
     {
-      goto finally;
+      goto finally_1;
     }
     if (cmd == "exit")
     {
       std::cout << "Exiting..." << std::endl;
-      goto finally;
+      goto finally_1;
+    }
+    else if (cmd == "probe")
+    {
+      std::cout << "Probing..." << std::endl;
+      socket.send("probe");
+      socket.recv(&cmd);
     }
     msleep(1000);
+  finally_1:
+    socket.close();
+    connected = false;
   }
-finally:
-  socket.close();
   DiscoveryService::stop();
   return 0;
 }
@@ -185,7 +236,6 @@ int main(int argc, char **argv)
     return -1;
   }
   bool is_server = argc > 1 && !strcmp(argv[1], "manager");
-  //int port = is_server ? atoi(argv[2]) : atoi(argv[1]);
   int port = INITIAL_PORT;
 
   ssize_t exit_code;

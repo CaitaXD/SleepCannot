@@ -29,17 +29,6 @@ typedef struct mutex_data_t
     std::vector<int> read_count;
 } mutex_data_t;
 
-// Represents a participant using the service
-typedef struct participant_t
-{
-    std::string hostname;
-    MacAddress mac;
-    std::string ip;
-    bool status; // true means awake, false means asleep
-} participant_t;
-// Represents the table of users using the service
-typedef std::unordered_map<std::string, participant_t> ParticipantTable;
-
 void print_participant(const participant_t& p);
 void print_management_table(const ParticipantTable& table, mutex_data_t& mutex_data, int& read_count);
 void add_participant(ParticipantTable& table, const participant_t& participant, mutex_data_t& mutex_data);
@@ -132,10 +121,8 @@ void show_status(const ParticipantTable& table, mutex_data_t& mutex_data, int& r
 }
 
 //wol function
-void wake_on_lan(int client_socket, const ParticipantTable& table, const std::string& hostname, mutex_data_t& mutex_data) {
-    int read_count = 0;
-    participant_t p = get_participant(table, hostname, mutex_data, read_count);
-    if (p.hostname == "None") {
+void wake_on_lan(int client_socket, participant_t participant) {
+    if (participant.hostname == "None") {
         std::cout << "Participant not found" << std::endl;
         return;
     }
@@ -144,10 +131,8 @@ void wake_on_lan(int client_socket, const ParticipantTable& table, const std::st
     //     return;
     // }
     // send packet
-    std::cout << "Sending magic packet to " << p.hostname << std::endl;
-    std::string magic_packet = "wakeup " + p.hostname;
-    std::cout << client_socket << std::endl;
-    int r = write(client_socket, magic_packet.c_str(), magic_packet.size());
+    std::string magic_packet = "wakeup " + participant.hostname;
+    int r = send(client_socket, magic_packet.c_str(), magic_packet.size(), 0);
     if (r < 0) {
         perror("wake_on_lan");
         return;
