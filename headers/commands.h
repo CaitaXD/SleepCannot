@@ -1,7 +1,6 @@
 #ifndef COMMANDS_H_
 #define COMMANDS_H_
 
-#include "Sockets.h"
 #include "DataStructures/str.h"
 #include <set>
 #include <vector>
@@ -15,8 +14,8 @@
 #define MAXLINE 1024
 #define INITIAL_PORT 35512
 
-Str client_msg = STR("General, Kenoby, you are a bold one");
-Str server_msg = STR("Hello there!");
+std::string client_msg = "General, Kenoby, you are a bold one";
+std::string server_msg = "Hello there!";
 
 typedef struct
 {
@@ -36,18 +35,39 @@ typedef struct participant_t
 // Represents the table of users using the service
 typedef std::unordered_map<std::string, participant_t> ParticipantTable;
 
-struct MachineEndpoint : EndPoint
+struct MachineEndpoint : IpEndPoint
 {
   MacAddress mac;
   std::string hostname;
 
+  MachineEndpoint() : IpEndPoint() {}
+  MachineEndpoint(in_addr_t address, int port) : IpEndPoint(address, port) {}
+  MachineEndpoint(struct sockaddr_in addr_in) : IpEndPoint(addr_in) {}
+
   MachineEndpoint with_port(int port) const
   {
     MachineEndpoint ep = *this;
-    ep.addrlen = sizeof(ep.addr);
-    struct sockaddr_in *addr = (struct sockaddr_in *)&ep.addr;
-    addr->sin_port = htons(port);
+    ep.addr_in.sin_port = htons(port);
     return ep;
+  }
+
+  MachineEndpoint with_address(uint32_t address) const
+  {
+    MachineEndpoint ep = *this;
+    ep.addr_in.sin_addr.s_addr = htonl(address);
+    return ep;
+  }
+
+  int get_port() const
+  {
+    return ntohs(((struct sockaddr_in *)&addr)->sin_port);
+  }
+
+  std::string to_string() const
+  {
+    auto ip = inet_ntoa(((struct sockaddr_in *)&addr)->sin_addr);
+    auto port = ntohs(((struct sockaddr_in *)&addr)->sin_port);
+    return hostname + " " + mac.mac_str + " " + std::string(ip) + ":" + std::to_string(port);
   }
 };
 
@@ -67,11 +87,6 @@ enum CommandType
 {
   COMMAND_ERROR = -1,
   COMMAND_WAKE_ON_LAN,
-  COMMAND_EXIT,
-  COMMAND_LIST,
-  COMMAND_CLEAR,
-  COMMAND_PING,
-  COMMAND_HELP,
   COMMAND_COUNT,
 };
 
@@ -96,17 +111,29 @@ struct wake_on_lan_args
 
 MacAddress get_mac();
 void *cmd_wake_on_lan(struct wake_on_lan_args *args);
-void *list_clients(struct list_clients_args *clients);
-void *ping_client(struct ping_client_args *arg);
-void *clear_screen(void *args);
-void *exit_program(void *args);
-void *help_msg(void *args);
+
+static inline int msleep(long msec)
+{
+  struct timespec ts;
+  int res;
+  if (msec < 0)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+  ts.tv_sec = msec / 1000;
+  ts.tv_nsec = (msec % 1000) * 1000000;
+  do
+  {
+    res = nanosleep(&ts, &ts);
+  } while (res && errno == EINTR);
+  return res;
+}
 
 #endif // COMMANDS_H_
 
 #ifdef COMMANDS_IMPLEMENTATION
 
-// Theese are not used in the program, only in testing
 Command commands[COMMAND_COUNT] = {
     // clang-format off
     [COMMAND_WAKE_ON_LAN] = {
@@ -114,36 +141,6 @@ Command commands[COMMAND_COUNT] = {
       description : "Sends a magic packet to the client to wake it up",
       fmt : "%d",
       callback : NULL
-    },
-    [COMMAND_EXIT] = {
-      cmd : STR("The negotiations were short"),
-      description : "Exits the program",
-      fmt : NULL,
-      callback : (Callback)exit_program
-    },
-    [COMMAND_LIST] = {
-      cmd : STR("list"),
-      description : "Lists all subscribed clients",
-      fmt : NULL,
-      callback : (Callback)list_clients
-    },
-    [COMMAND_CLEAR] = {
-      cmd : STR("clear"),
-      description : "Clears the screen",
-      fmt : NULL,
-      callback : (Callback)clear_screen
-    },
-    [COMMAND_PING] = {
-      cmd : STR("ping"), 
-      description : "Pings a client",
-      fmt : "%d", 
-      callback : (Callback)ping_client
-    },
-    [COMMAND_HELP] = {
-      cmd : STR("help"),
-      description : "Prints this message",
-      fmt : NULL,
-      callback : (Callback)help_msg
     }
     // clang-format on
 };
@@ -160,64 +157,6 @@ enum CommandType get_command_type(Str command)
   return COMMAND_ERROR;
 }
 
-int command_exec(enum CommandType cmd, void *command_args)
-{
-  if (commands[cmd].callback != nullptr)
-    return (intptr_t)commands[cmd].callback(command_args);
-  return 0;
-}
-
-void *list_clients(struct list_clients_args *args)
-{
-  Clients clients = args->clients;
-  if (clients.size() == 0)
-  {
-    printf("[INFO] 0 clients connected\n");
-    return NULL;
-  }
-  for (size_t i = 0; i < clients.size(); i++)
-  {
-    EndPoint cep = clients[i];
-    struct sockaddr_in *addr = (struct sockaddr_in *)&cep.addr;
-    const char *ip = inet_ntoa(addr->sin_addr);
-    int port = ntohs(addr->sin_port);
-
-    printf("[ID: %zu] Client: %s:%d\n", i, ip, port);
-  }
-
-  return NULL;
-}
-
-void *ping_client(struct ping_client_args *arg)
-{
-  int id = arg->id;
-  Clients clients = arg->clients;
-
-  if ((size_t)id < clients.size())
-  {
-    EndPoint cep = clients[id];
-    char ping_cmd_buf[256];
-    const char *iadrr = inet_ntoa(((struct sockaddr_in *)&cep.addr)->sin_addr);
-    int n = snprintf(UNPACK_ARRAY(ping_cmd_buf), "ping -c 1 %s", iadrr);
-    if (n > 0)
-    {
-      ping_cmd_buf[n] = '\0';
-      system(ping_cmd_buf);
-    }
-    else
-    {
-      perror("snprintf error could not read UdpSocket address string");
-      return (void *)-1;
-    }
-  }
-  else
-  {
-    fprintf(stderr, "[ERROR] Invalid client id %d\n", id);
-  }
-
-  return NULL;
-}
-
 void *clear_screen(void *args)
 {
   (void)args;
@@ -231,38 +170,18 @@ void *exit_program(void *args)
   return NULL;
 }
 
-void *help_msg(void *args)
-{
-  (void)args;
-  printf("\nCommands used for testing and debugging:\n");
-  for (size_t i = 0; i < COMMAND_COUNT; i++)
-  {
-    printf("[COMMAND]: " str_fmt "\n", str_args(commands[i].cmd));
-    if (commands[i].description)
-    {
-      printf("[DESCRIPTION]: %s\n", commands[i].description);
-    }
-    if (commands[i].fmt)
-    {
-      printf("[FORMAT]: %s\n", commands[i].fmt);
-    }
-    printf("\n");
-  }
-  return NULL;
-}
-
 void *help_msg_server()
 {
-  printf("[COMMAND]\tWAKEUP <hostname>\n");
-  printf("[DESCRIPTION]\tSends a WoL packet to <hostname> connected to the service.\n\n");
+  printf("%s", "[COMMAND]\tWAKEUP <hostname>\n");
+  printf("%s", "[DESCRIPTION]\tSends a WoL packet to <hostname> connected to the service.\n\n");
 
   return NULL;
 }
 
 void *help_msg_client()
 {
-  printf("[COMMAND]\tEXIT\n");
-  printf("[DESCRIPTION]\tExists the program.\n\n");
+  printf("%s", "[COMMAND]\tEXIT\n");
+  printf("%s", "[DESCRIPTION]\tExists the program.\n\n");
 
   return NULL;
 }
@@ -270,33 +189,30 @@ void *help_msg_client()
 int parse_command(ParticipantTable &participants, std::mutex &mutex)
 {
   int exit_code = 0;
-  char bff[MAXLINE];
-  Str buffer = STR(bff);
-  fgets(bff, MAXLINE, stdin);
-  ssize_t read = strlen(bff);
-  Str cmd = str_trim(str_take(buffer, read));
+  char buffer[MAXLINE];
+  Str buffer_view = STR(buffer);
+  fgets(buffer, MAXLINE, stdin);
+  ssize_t read = strlen(buffer);
+  Str cmd = str_trim(str_take(buffer_view, read));
   enum CommandType cmd_type = get_command_type(cmd);
-  //void *args = NULL;
+  // void *args = NULL;
   std::lock_guard<std::mutex> lock(mutex);
   switch (cmd_type)
   {
-  case COMMAND_HELP:
-  case COMMAND_EXIT:
-  case COMMAND_CLEAR:
-  case COMMAND_LIST:
-  case COMMAND_PING:
   case COMMAND_WAKE_ON_LAN:
   {
     Str cmd_args = str_trim(str_skip(cmd, commands[cmd_type].cmd.len));
     auto host_name = string_from_str(str_take(cmd_args, cmd_args.len));
     auto participant = participants.at(host_name);
     std::string magic_packet = "wakeup " + host_name;
-    EndPoint broadcast = ip_broadcast(INITIAL_PORT + 2);
-    UdpSocket s = UdpSocket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if(UdpSocket_bind(&s, ip_endpoint(INADDR_ANY, INITIAL_PORT + 2)) < 0){
+    IpEndPoint broadcast = IpEndPoint::broadcast(INITIAL_PORT + 2);
+    Socket s{};
+    s = s.open(AdressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
+    if (s.bind(IpEndPoint{INADDR_ANY, INITIAL_PORT + 2}) < 0)
+    {
       perror("bind");
     }
-    int r = UdpSocket_send_endpoint(&s, str_from_string(magic_packet), &broadcast, 0);
+    int r = s.send(magic_packet, broadcast, 0);
     if (r < 0)
     {
       perror("wake_on_lan");
@@ -323,7 +239,7 @@ MacAddress get_mac()
   FILE *f = fopen(MAC_ADDRES_FILE, "r");
   if (f == NULL)
   {
-    perror("Error opening file");
+    perror("get_mac");
     exit(EXIT_FAILURE);
   }
 

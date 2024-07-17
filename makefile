@@ -16,6 +16,42 @@ TARGET = $(BIN_DIR)/sleep_server
 # Default target
 all: $(TARGET)
 
+dockerbuild:
+	docker build -t sleep_server -f server.dockerfile .
+	docker build -t sleep_client -f client.dockerfile .
+
+dockerrun: 
+	docker run -d --name server --network bridge -t sleep_server 
+	docker run -d --name client0 --network bridge -t sleep_client
+	docker run -d --name client1 --network bridge -t sleep_client
+	docker run -d --name client2 --network bridge -t sleep_client
+	docker run -d --name client4 --network bridge -t sleep_client
+	docker run -d --name client5 --network bridge -t sleep_client
+
+dockerclean:
+	docker kill server 
+	docker kill client0
+	docker kill client1
+	docker kill client2
+	docker kill client4
+	docker kill client5
+	docker rm server
+	docker rm client0
+	docker rm client1
+	docker rm client2
+	docker rm client4
+	docker rm client5
+	docker image rm sleep_server
+	docker image rm sleep_client
+
+dockerrestart:
+	docker restart server
+	docker restart client0
+	docker restart client1
+	docker restart client2
+	docker restart client4
+	docker restart client5
+	
 $(TARGET): $(OBJECTS)
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS)

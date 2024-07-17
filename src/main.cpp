@@ -20,10 +20,6 @@
 #include "../headers/DataStructures/str.h"
 #undef STR_IMPLEMENTATION
 
-#define UdpSocket_IMPLEMENTATION
-#include "../headers/Sockets.h"
-#undef UdpSocket_IMPLEMENTATION
-
 #define COMMANDS_IMPLEMENTATION
 #include "../headers/commands.h"
 #undef COMMANDS_IMPLEMENTATION
@@ -35,8 +31,6 @@
 #include "../headers/management.hpp"
 #include "../headers/Socket.hpp"
 #include <signal.h>
-
-
 
 bool key_hit()
 {
@@ -52,9 +46,11 @@ int server(int port)
   int Socket_port = port + 1;
   printf("Manager\n");
   help_msg_server();
-  DiscoveryService::start_server(port);
+  DiscoveryService discovery_service{};
+  discovery_service.start_server(port);
   std::vector<MachineEndpoint> clients = {};
-  UdpSocket s = UdpSocket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  Socket s{};
+  s.open(AdressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
   // Control reading and writting to manager table
   ParticipantTable participants;
   mutex_data_t mutex_data = {std::mutex(), std::condition_variable(), false, 1, {0}};
@@ -66,18 +62,14 @@ int server(int port)
   {
     if (key_hit())
     {
-      s.error |= parse_command(participants, mutex_data.mutex);
-    }
-    if (s.error)
-    {
-      goto finally;
+      parse_command(participants, mutex_data.mutex);
     }
 
-    MachineEndpoint ep = {};
-    if (DiscoveryService::discovered_endpoints.dequeue(ep))
+    MachineEndpoint ep = {INADDR_ANY, port};
+    if (discovery_service.endpoints.dequeue(ep))
     {
-      if (std::find_if(clients.begin(), clients.end(), [&ep](EndPoint other)
-                       { return epcmp_inaddr(&ep, &other); }) == clients.end())
+      if (std::find_if(clients.begin(), clients.end(), [&](IpEndPoint other)
+                       { return ep == other; }) == clients.end())
       {
         // Adds new client to the management table
         char *ip = inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr);
@@ -88,21 +80,22 @@ int server(int port)
     }
 
     std::unique_lock<std::mutex> lock(mutex_data.mutex);
-    std::string packet{}; 
-    //struct timeval timeout;      
-    //timeout.tv_sec = 3;
-    //timeout.tv_usec = 0;
+    std::string packet{};
+    struct timeval timeout;
+    timeout.tv_sec = 3;
+    timeout.tv_usec = 0;
     for (auto [hostname, participant] : participants)
     {
       if (participant.status)
       {
         packet.clear();
-        EndPoint sep = {};
+        IpEndPoint sep{};
         Socket socket{};
         Socket cli{};
-        socket.open();
+        socket.open(AdressFamily::InterNetwork, SocketType::Stream);
         socket.set_option(SO_REUSEADDR, 1);
-        //UdpSocket.set_option(SO_RCVTIMEO, &timeout);
+        socket.set_option(SO_RCVTIMEO, &timeout);
+        socket.set_option(SO_SNDTIMEO, &timeout);
         int r;
         int max_tries = 100;
         do
@@ -144,18 +137,18 @@ int server(int port)
       }
     }
   }
-finally:
   table_readers[0].join();
-  DiscoveryService::stop();
-  s.error |= close(s.fd);
-  return s.error;
+  discovery_service.stop();
+  s.close();
+  return 0;
 }
 
 int client(int port)
 {
+  DiscoveryService discovery_service{};
   printf("Participant\n");
   help_msg_client();
-  DiscoveryService::start_client(port);
+  discovery_service.start_client(port);
   Socket socket = {};
   bool connected = false;
   while (1)
@@ -176,13 +169,13 @@ int client(int port)
     MachineEndpoint ep = {};
     std::string cmd;
     int r = -1;
-    if (!connected && DiscoveryService::discovered_endpoints.peek(ep))
+    if (!connected && discovery_service.endpoints.peek(ep))
     {
       std::cout << "Manager Endpoint: " << ep.to_string() << std::endl;
       int max_tries = 100;
-      int Socket_port = ep.get_port() + 1;
-      ep = ep.with_port(Socket_port);
-      r = socket.open();
+      int monitoring_port = ep.get_port() + 1;
+      ep = ep.with_port(monitoring_port);
+      r = socket.open(AdressFamily::InterNetwork, SocketType::Stream);
       if (r < 0)
       {
         goto finally_1;
@@ -224,7 +217,7 @@ int client(int port)
     socket.close();
     connected = false;
   }
-  DiscoveryService::stop();
+  discovery_service.stop();
   return 0;
 }
 

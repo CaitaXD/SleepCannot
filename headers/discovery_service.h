@@ -14,172 +14,150 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <pthread.h>
+#include <thread>
 #include <vector>
 #include "DataStructures/str.h"
-#include "Sockets.h"
 #include "commands.h"
 #include "DataStructures/LockFreeQueue.h"
 
-namespace DiscoveryService
+#define HOSTNAME_LEN 1024
+
+class DiscoveryService
 {
+    std::thread thread;
+    bool running;
+
+public:
     void start_server(int port);
     void start_client(int port);
     void stop();
-    Concurrent::LockFreeQueue<MachineEndpoint> discovered_endpoints = {};
-}
+    Concurrent::LockFreeQueue<MachineEndpoint> endpoints = {};
+};
 #endif // _DISCOVERY_SERVICE_H
 
 #ifdef DISCOVERY_SERVICE_IMPLEMENTATION
 
-static inline int msleep(long msec)
+void DiscoveryService::start_server(int port)
 {
-    struct timespec ts;
-    int res;
-    if (msec < 0)
-    {
-        errno = EINVAL;
-        return -1;
-    }
-    ts.tv_sec = msec / 1000;
-    ts.tv_nsec = (msec % 1000) * 1000000;
-    do
-    {
-        res = nanosleep(&ts, &ts);
-    } while (res && errno == EINTR);
-    return res;
-}
-
-namespace DiscoveryService
-{
-    UdpSocket s;
-    pthread_t thread;
-
-    void *sever_callback(void *data)
-    {
-        (void)data;
-        char buffer[MAXLINE];
-        Str buffer_view = STR(buffer);
-        int read;
-        while (1)
+    thread = std::thread([&]() {
+        Socket s{};
+        s.open(AdressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
+        if (s.bind(InternetAdress::Any, port) < 0)
         {
-            MachineEndpoint ep = {};
-            bzero(buffer, MAXLINE);
-            read = UdpSocket_receive_endpoint(&s, buffer_view, &ep, MSG_WAITALL);
-            if (errno != 0)
-            {
-                perror("Error");
-                pthread_cancel(thread);
-                break;
-            }
-
-            if (str_starts_with(str_take(buffer_view, read), client_msg) == 0)
-            {
-                MachineEndpoint top = {};
-                if (discovered_endpoints.peek(top) && epcmp_inaddr(&top, &ep) == 0)
+            perror("bind");
+            return;
+        }
+        running = true;
+        std::string buffer;
+        while (running) {
+            MachineEndpoint client_machine{};
+            if (s.recv(&buffer, client_machine, MSG_DONTWAIT) < 0) {
+                if (errno == EAGAIN)
                 {
                     continue;
                 }
-                int cursor = client_msg.len;
-                int client_hostname_len = *(int *)(str_slice(buffer_view, cursor, sizeof(int)).data);
+                perror("recv");
+                break;
+            }
+            std::string_view buffer_view = std::string_view(buffer);
+            std::cout << buffer << std::endl;
+            if (buffer.rfind(client_msg)) {
+                MachineEndpoint top{};
+                if (endpoints.peek(top) && top == client_machine)
+                {
+                    continue;
+                }
+                int cursor = client_msg.size();
+                int client_hostname_len = *(int *)buffer_view.substr(cursor, sizeof(int)).data();
                 cursor += sizeof(int);
 
-                Str client_hostname = str_slice(buffer_view, cursor, client_hostname_len);
+                std::string_view client_hostname = buffer_view.substr(cursor, client_hostname_len);
                 cursor += client_hostname_len;
 
-                Str client_mac_addr = str_slice(buffer_view, cursor, MAC_ADDR_MAX);
+                std::string_view client_mac_addr = buffer_view.substr(cursor, MAC_ADDR_MAX);
                 cursor += MAC_ADDR_MAX;
 
-                Str client_mac_str = str_slice(buffer_view, cursor, MAC_STR_MAX);
+                std::string_view client_mac_str = buffer_view.substr(cursor, MAC_STR_MAX);
                 cursor += MAC_STR_MAX;
 
-                memcpy(ep.mac.mac_addr, client_mac_addr.data, MAC_ADDR_MAX);
-                memcpy(ep.mac.mac_str, client_mac_str.data, MAC_STR_MAX);
-                ep.hostname = string_from_str(client_hostname);
-                
-                discovered_endpoints.enqueue(ep);
-                UdpSocket_send_endpoint(&s, server_msg, &ep, MSG_DONTWAIT);
-                s.error = 0;
+                memcpy(client_machine.mac.mac_addr, client_mac_addr.data(), MAC_ADDR_MAX);
+                memcpy(client_machine.mac.mac_str, client_mac_str.data(), MAC_STR_MAX);
+                client_machine.hostname = client_hostname;
+
+                endpoints.enqueue(client_machine);
+                s.send(server_msg, client_machine, MSG_DONTWAIT);
             }
         }
-        return NULL;
-    }
+        running = false;
+        s.close(); 
+    });
+}
 
-#define HOSTNAME_LEN 1024
-    void *client_callback(void *data)
-    {
-        int port = (int)(intptr_t)data;
+void DiscoveryService::start_client(int port)
+{
+    thread = std::thread([this, port]() {
+        Socket s{};
+        if(s.open(AdressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP) < 0)
+        {
+            perror("open");
+            return;
+        }
+        if (s.bind(InternetAdress::Any, port) < 0){
+            perror("bind");
+            return;
+        }
+        if(s.set_option(SO_BROADCAST, 1) < 0)
+        {
+            perror("set_option");
+            return;
+        }
+        running = true;
+        IpEndPoint braodcast_ep = IpEndPoint::broadcast(port);
         std::string buffer = std::string();
-        EndPoint braodcast_ep = ip_broadcast(port);
-        while (1)
+        while (running)
         {
             buffer.clear();
-            MachineEndpoint ep = {};
-            s.error = 0;
+            MachineEndpoint ep{};
             MacAddress mac = get_mac();
             char hostname[HOSTNAME_LEN];
             gethostname(hostname, HOSTNAME_LEN);
             int hostname_len = strlen(hostname);
 
-            buffer.append(str_unpack(client_msg));
+            buffer.append(client_msg);
             buffer.append((char *)&(hostname_len), sizeof(hostname_len));
             buffer.append(hostname, hostname_len);
             buffer.append((char *)mac.mac_addr, MAC_ADDR_MAX);
             buffer.append(mac.mac_str, MAC_STR_MAX);
 
-            Str buffer_view = str_from_string(buffer);
-            UdpSocket_send_endpoint(&s, buffer_view, &braodcast_ep, 0);
-            msleep(1);
-            int read = UdpSocket_receive_endpoint(&s, buffer_view, &ep, 0);
+            if(s.send(buffer, braodcast_ep) < 0) {
+                perror("send");
+                continue;
+            }
+            msleep(100);
+            int read = s.recv(&buffer, ep, MSG_DONTWAIT);
             if (read < 0)
             {
                 continue;
             }
-            Str msg = str_take(buffer_view, read);
-            if (str_cmp(msg, server_msg) == 0)
+            std::string_view msg = std::string_view(buffer.data(), read).substr(0, read);
+            if (msg == server_msg)
             {
-                printf(str_fmt "\n", str_args(msg));
-                MachineEndpoint top = {};
-                if (!discovered_endpoints.peek(top)) {
-                    discovered_endpoints.enqueue(ep);
+                std::cout << msg << std::endl;
+                MachineEndpoint top = {INADDR_ANY, port};
+                if (!endpoints.peek(top))
+                {
+                    endpoints.enqueue(ep);
                 }
                 sleep(60);
             }
         }
-        return NULL;
-    }
-
-    void start_server(int port)
-    {
-        s = UdpSocket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        int broadcastEnable = 1;
-        int ret = setsockopt(s.fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
-        //printf("%d", ret);
-        if (ret < 0)
-        {
-            perror("start_server");
-            return;
-        }
-        UdpSocket_bind(&s, ip_endpoint(INADDR_ANY, port));
-        pthread_create(&thread, NULL, sever_callback, NULL);
-    }
-
-    void start_client(int port)
-    {
-        s = UdpSocket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        int broadcastEnable = 1;
-        int ret = setsockopt(s.fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
-        if (ret < 0)
-            perror("start_client");
-        UdpSocket_bind(&s, ip_endpoint(INADDR_ANY, port));
-        pthread_create(&thread, NULL, client_callback, (void *)(intptr_t)port);
-    }
-
-    void stop()
-    {
-        pthread_cancel(thread);
-        close(s.fd);
-        s = UdpSocket{};
-    }
+        running = false; });
 }
+
+void DiscoveryService::stop()
+{
+    running = false;
+    thread.join();
+}
+
 #endif // DISCOVERY_SERVICE_IMPLEMENTATION

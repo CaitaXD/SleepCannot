@@ -26,7 +26,7 @@ const char *str_to_cstr(Str s);
 
 #define str_to_cstr(s) (_str_to_cstr(s, (char *)alloca(CSTR_LEN(s)), CSTR_LEN(s)))
 
-#define str_unpack(s) (s).data, (s).len
+// #define str_unpack(s) (s).data, (s).len
 
 #define str_fmt "%.*s"
 #define str_args(s) (int)((s).len), (s).data
