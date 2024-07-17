@@ -16,10 +16,6 @@
 #include <algorithm>
 #include <thread>
 
-#define STR_IMPLEMENTATION
-#include "../headers/DataStructures/str.h"
-#undef STR_IMPLEMENTATION
-
 #define COMMANDS_IMPLEMENTATION
 #include "../headers/commands.h"
 #undef COMMANDS_IMPLEMENTATION
@@ -43,11 +39,11 @@ bool key_hit()
 
 int server(int port)
 {
-  int Socket_port = port + 1;
+  int monitoring_port = port + 1;
   printf("Manager\n");
   help_msg_server();
-  DiscoveryService discovery_service{};
-  discovery_service.start_server(port);
+  DiscoveryService discovery_service{port};
+  discovery_service.start_server();
   std::vector<MachineEndpoint> clients = {};
   Socket s{};
   s.open(AdressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
@@ -62,7 +58,7 @@ int server(int port)
   {
     if (key_hit())
     {
-      parse_command(participants, mutex_data.mutex);
+      command_exec(participants, mutex_data.mutex);
     }
 
     MachineEndpoint ep = {INADDR_ANY, port};
@@ -100,7 +96,7 @@ int server(int port)
         int max_tries = 100;
         do
         {
-          r = socket.bind(Socket_port);
+          r = socket.bind(monitoring_port);
           msleep(100);
         } while (errno == EADDRINUSE && max_tries--);
         if (r < 0)
@@ -145,10 +141,10 @@ int server(int port)
 
 int client(int port)
 {
-  DiscoveryService discovery_service{};
+  DiscoveryService discovery_service{port};
   printf("Participant\n");
   help_msg_client();
-  discovery_service.start_client(port);
+  discovery_service.start_client();
   Socket socket = {};
   bool connected = false;
   while (1)
@@ -158,8 +154,8 @@ int client(int port)
       char buffer[MAXLINE];
       if (fgets(buffer, MAXLINE, stdin) != NULL)
       {
-        Str exit_cmd = STR("exit");
-        if (str_starts_with(str_take(STR(buffer), strlen(buffer)), exit_cmd))
+        std::string_view buffer_view = std::string_view(buffer, strlen(buffer));
+        if (buffer_view.rfind("exit"))
         {
           break;
         }

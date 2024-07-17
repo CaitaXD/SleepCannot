@@ -8,6 +8,8 @@
 #ifndef Socket_H_
 #define Socket_H_
 
+using string = std::string;
+
 enum AdressFamily
 {
   InterNetwork = AF_INET,
@@ -37,15 +39,15 @@ struct Adress
 
   Adress(uint8_t a, uint8_t b, uint8_t c, uint8_t d) : bytes{a, b, c, d} {}
   Adress(const uint8_t adress[4]) { memmove(bytes, adress, 4); }
-  Adress(uint32_t address) : netwrok_order_address(htonl(address)) {}
+  Adress(in_addr_t address) : netwrok_order_address(htonl(address)) {}
 
-  static Adress parse(const std::string &ip)
+  static Adress parse(const string &ip)
   {
     auto addr = inet_addr(ip.c_str());
     return Adress(addr);
   }
 
-  uint32_t host_order() const { return ntohl(netwrok_order_address); }
+  in_addr_t host_order() const { return ntohl(netwrok_order_address); }
   in_addr_t network_order() const { return netwrok_order_address; }
 };
 
@@ -78,7 +80,7 @@ typedef struct IpEndPoint
     addr_in.sin_port = htons(port);
   }
 
-  IpEndPoint(const std::string &ip, int port)
+  IpEndPoint(const string &ip, int port)
   {
     addrlen = sizeof(struct sockaddr_in);
     addr_in.sin_family = AdressFamily::InterNetwork;
@@ -132,12 +134,12 @@ public:
   template <typename T>
   int set_option(int option, T *value);
 
-  int connect(const std::string &ip, int port);
+  int connect(const string &ip, int port);
   int connect(const IpEndPoint &ep);
-  int send(const std::string &payload, int flags = 0);
-  int recv(std::string *payload, int flags = 0);
-  int send(const std::string &payload, const IpEndPoint &ep, int flags = 0);
-  int recv(std::string *payload, IpEndPoint &ep, int flags = 0);
+  int send(const string &payload, int flags = 0);
+  int recv(string *payload, int flags = 0);
+  int send(const string &payload, const IpEndPoint &ep, int flags = 0);
+  int recv(string *payload, IpEndPoint &ep, int flags = 0);
   int close();
   int bind(int port);
   int bind(const IpEndPoint &ep);
@@ -176,7 +178,7 @@ int Socket::set_option(int option, T *value)
   return ::setsockopt(sockfd, SOL_SOCKET, option, value, sizeof(*value));
 }
 
-int Socket::connect(const std::string &ip, int port)
+int Socket::connect(const string &ip, int port)
 {
   struct sockaddr_in server_addr;
   server_addr.sin_family = AF_INET;
@@ -193,12 +195,12 @@ int Socket::connect(const std::string &ip, int port)
   return 0;
 }
 
-int Socket::send(const std::string &payload, int flags)
+int Socket::send(const string &payload, int flags)
 {
   return ::send(sockfd, payload.c_str(), payload.size(), flags);
 }
 
-int Socket::recv(std::string *payload, int flags)
+int Socket::recv(string *payload, int flags)
 {
   char buffer[1024] = {0};
   int bytesReceived = ::recv(sockfd, buffer, 1024, flags);
@@ -206,7 +208,7 @@ int Socket::recv(std::string *payload, int flags)
   {
     return -1;
   }
-  *payload = std::string(buffer, bytesReceived);
+  *payload = string(buffer, bytesReceived);
   return bytesReceived;
 }
 
@@ -253,7 +255,7 @@ int Socket::accept(IpEndPoint &ep)
   return ::accept(sockfd, (struct sockaddr *)&ep.addr, &ep.addrlen);
 }
 
-int Socket::recv(std::string *payload, IpEndPoint &ep, int flags)
+int Socket::recv(string *payload, IpEndPoint &ep, int flags)
 {
   char buffer[1024]{};
   int bytes_received = ::recvfrom(sockfd, buffer, 1024, flags, &ep.addr, &ep.addrlen);
@@ -261,11 +263,11 @@ int Socket::recv(std::string *payload, IpEndPoint &ep, int flags)
   {
     return -1;
   }
-  *payload = std::string(buffer, bytes_received);
+  *payload = string(buffer, bytes_received);
   return bytes_received;
 }
 
-int Socket::send(const std::string &payload, const IpEndPoint &ep, int flags)
+int Socket::send(const string &payload, const IpEndPoint &ep, int flags)
 {
   return ::sendto(sockfd, payload.c_str(), payload.size(), flags, &ep.addr, ep.addrlen);
 }

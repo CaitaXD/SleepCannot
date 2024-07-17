@@ -1,7 +1,6 @@
 #ifndef COMMANDS_H_
 #define COMMANDS_H_
 
-#include "DataStructures/str.h"
 #include <set>
 #include <vector>
 #include "Socket.hpp"
@@ -14,8 +13,11 @@
 #define MAXLINE 1024
 #define INITIAL_PORT 35512
 
-std::string client_msg = "General, Kenoby, you are a bold one";
-std::string server_msg = "Hello there!";
+using string_view = std::string_view;
+using string = std::string;
+
+string client_msg = "General, Kenoby, you are a bold one";
+string server_msg = "Hello there!";
 
 typedef struct
 {
@@ -26,19 +28,19 @@ typedef struct
 // Represents a participant using the service
 typedef struct participant_t
 {
-  std::string hostname;
+  string hostname;
   MacAddress mac;
-  std::string ip;
+  string ip;
   bool status; // true means awake, false means asleep
 } participant_t;
 
 // Represents the table of users using the service
-typedef std::unordered_map<std::string, participant_t> ParticipantTable;
+typedef std::unordered_map<string, participant_t> ParticipantTable;
 
 struct MachineEndpoint : IpEndPoint
 {
   MacAddress mac;
-  std::string hostname;
+  string hostname;
 
   MachineEndpoint() : IpEndPoint() {}
   MachineEndpoint(in_addr_t address, int port) : IpEndPoint(address, port) {}
@@ -63,11 +65,11 @@ struct MachineEndpoint : IpEndPoint
     return ntohs(((struct sockaddr_in *)&addr)->sin_port);
   }
 
-  std::string to_string() const
+  string to_string() const
   {
     auto ip = inet_ntoa(((struct sockaddr_in *)&addr)->sin_addr);
     auto port = ntohs(((struct sockaddr_in *)&addr)->sin_port);
-    return hostname + " " + mac.mac_str + " " + std::string(ip) + ":" + std::to_string(port);
+    return hostname + " " + mac.mac_str + " " + string(ip) + ":" + std::to_string(port);
   }
 };
 
@@ -76,9 +78,9 @@ typedef std::vector<MachineEndpoint> Clients;
 typedef void *(*Callback)(void *);
 typedef struct Command
 {
-  Str cmd;
-  const char *description;
-  const char *fmt;
+  string_view cmd;
+  string_view description;
+  string_view fmt;
   const Callback callback;
 } Command;
 
@@ -136,8 +138,8 @@ static inline int msleep(long msec)
 
 Command commands[COMMAND_COUNT] = {
     // clang-format off
-    [COMMAND_WAKE_ON_LAN] = {
-      cmd : STR("WAKEUP"),
+    [COMMAND_WAKE_ON_LAN] = Command{
+      cmd : "WAKEUP",
       description : "Sends a magic packet to the client to wake it up",
       fmt : "%d",
       callback : NULL
@@ -145,11 +147,11 @@ Command commands[COMMAND_COUNT] = {
     // clang-format on
 };
 
-enum CommandType get_command_type(Str command)
+enum CommandType get_command_type(string_view command)
 {
   for (size_t i = 0; i < COMMAND_COUNT; i++)
   {
-    if (str_starts_with(command, commands[i].cmd))
+    if (command.rfind(commands[i].cmd) == 0)
     {
       return (enum CommandType)i;
     }
@@ -186,14 +188,34 @@ void *help_msg_client()
   return NULL;
 }
 
-int parse_command(ParticipantTable &participants, std::mutex &mutex)
+inline void ltrim(string &s)
+{
+  s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch)
+                                  { return !std::isspace(ch); }));
+}
+
+inline void rtrim(string &s)
+{
+  s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch)
+                       { return !std::isspace(ch); })
+              .base(),
+          s.end());
+}
+
+inline void trim(string &s)
+{
+  rtrim(s);
+  ltrim(s);
+}
+
+int command_exec(ParticipantTable &participants, std::mutex &mutex)
 {
   int exit_code = 0;
   char buffer[MAXLINE];
-  Str buffer_view = STR(buffer);
   fgets(buffer, MAXLINE, stdin);
   ssize_t read = strlen(buffer);
-  Str cmd = str_trim(str_take(buffer_view, read));
+  string cmd = string(buffer).substr(0, read);
+  trim(cmd);
   enum CommandType cmd_type = get_command_type(cmd);
   // void *args = NULL;
   std::lock_guard<std::mutex> lock(mutex);
@@ -201,10 +223,11 @@ int parse_command(ParticipantTable &participants, std::mutex &mutex)
   {
   case COMMAND_WAKE_ON_LAN:
   {
-    Str cmd_args = str_trim(str_skip(cmd, commands[cmd_type].cmd.len));
-    auto host_name = string_from_str(str_take(cmd_args, cmd_args.len));
+    string cmd_args = string(cmd).substr(commands[cmd_type].cmd.size());
+    trim(cmd_args);
+    auto host_name = string(cmd_args).substr(0, cmd_args.find(" "));
     auto participant = participants.at(host_name);
-    std::string magic_packet = "wakeup " + host_name;
+    string magic_packet = "wakeup " + host_name;
     IpEndPoint broadcast = IpEndPoint::broadcast(INITIAL_PORT + 2);
     Socket s{};
     s = s.open(AdressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
@@ -224,7 +247,7 @@ int parse_command(ParticipantTable &participants, std::mutex &mutex)
     break;
   }
   default:
-    fprintf(stderr, "[ERROR] Invalid command " str_fmt "\n", str_args(cmd));
+    std::cerr << "[ERROR] Invalid command " << cmd << std::endl;
     goto finally;
   }
 finally:
