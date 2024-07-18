@@ -1,9 +1,9 @@
 #ifndef MONITORING_SERVICE_H_
 #define MONITORING_SERVICE_H_
 
-#include <arpa/inet.h>
 #include <errno.h>
 #include <netdb.h>
+#include <arpa/inet.h>
 #include <netinet/if_ether.h>
 #include <netinet/in.h>
 #include <stdbool.h>
@@ -17,7 +17,7 @@
 #include <vector>
 #include <pthread.h>
 #include "macros.h"
-#include "commands.hpp"
+#include "management.hpp"
 
 class MonitoringService
 {
@@ -42,6 +42,7 @@ public:
 };
 
 #endif // MONITORING_SERVICE_H_
+
 #ifdef MONITORING_SERVICE_IMPLEMENTATION
 
 void MonitoringService::start_server(ParticipantTable &participants)
@@ -53,8 +54,8 @@ void MonitoringService::start_server(ParticipantTable &participants)
     MonitoringService *ms = (MonitoringService *)data;
     Socket server{};
     struct timeval timeout {
-      tv_sec : 3,
-      tv_usec : 0
+      .tv_sec = 3,
+      .tv_usec = 0
     };
     int result = server.open(AdressFamily::InterNetwork, SocketType::Stream, SocketProtocol::TCP);
     result |= server.bind(ms->port);
@@ -69,26 +70,32 @@ void MonitoringService::start_server(ParticipantTable &participants)
     }
 
     std::string packet{};
-    while(1)
+    //while(1)
     {   
       ms->participants->lock();
-      for (auto [host, participant] : ms->participants->map) {
+      //for (auto [host, participant] : ms->participants->map) {
+      auto &[host, participant] = *ms->participants->map.begin(); {
         if (participant.socket == nullptr || participant.socket->sockfd == -1)
         {
           result |= server.listen();
           if (result < 0) {
             perrorcode("listen");
-            continue;
+            return NULL;
           }
           IpEndPoint client_endpoint{};
           Socket client = server.accept(client_endpoint);
           if (client.sockfd < 0) {
             perrorcode("accept");
-            continue;
+            return NULL;
           }
           else {
             std::cout << "Accepted connection from: " << client_endpoint.to_string() << std::endl;
-            participant.socket = std::make_shared<Socket>(std::move(client));
+            if(participant.socket == nullptr) {
+              participant.socket = std::make_shared<Socket>(std::move(client));
+            }
+            else {
+              *participant.socket = std::move(client);
+            }
           }
           result |= participant.socket->set_option(SO_RCVTIMEO, &timeout);
           result |= participant.socket->set_option(SO_SNDTIMEO, &timeout);
@@ -103,6 +110,7 @@ void MonitoringService::start_server(ParticipantTable &participants)
           {
             std::cout << "Received probe from " << host << std::endl;
             participant.status = true;
+            participant.socket->close();
           }
         }
       }
@@ -118,7 +126,7 @@ void MonitoringService::start_client(MachineEndpoint &server_machine)
   pthread_create(&thread, NULL, [](void *data) -> void *
                  {
     MonitoringService *ms = (MonitoringService *)data;
-    int result;
+    int result = 0;
     Socket socket{};
     while (result < 0) {
       result = socket.open(AdressFamily::InterNetwork, SocketType::Stream, SocketProtocol::TCP);
@@ -131,6 +139,7 @@ void MonitoringService::start_client(MachineEndpoint &server_machine)
     }
     std::cout << "Monitoring Endpoint: " << ms->server_machine.to_string() << std::endl;
     std::string cmd;
+    
     while (ms->running)
     {
       result |= socket.recv(&cmd);

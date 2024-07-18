@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <thread>
 #include <signal.h>
+#include <unistd.h>
 
 #define NET_IMPLEMENTATION
 #include "../headers/Net/Net.hpp"

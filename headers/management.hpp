@@ -5,10 +5,12 @@
 #include <vector>
 #include <unordered_map>
 #include <string>
+#include <string.h>
 #include <mutex>
 #include <thread>
 #include <condition_variable>
 #include <optional>
+#include "Net/Socket.hpp"
 
 // Used to control read and write access to the management table
 typedef struct mutex_data_t
@@ -38,7 +40,7 @@ struct MacAddress
     unsigned char mac_addr[MAC_ADDR_MAX];
     char mac_str[MAC_STR_MAX];
 
-    constexpr bool operator==(const MacAddress &other) const
+    bool operator==(const MacAddress &other) const
     {
         return memcmp(mac_addr, other.mac_addr, MAC_ADDR_MAX) == 0;
     }

@@ -7,6 +7,10 @@
 #include <string>
 #include <mutex>
 #include <condition_variable>
+#include <arpa/inet.h>
+#include <netinet/if_ether.h>
+#include <netinet/in.h>
+#include <string.h>
 #include "./../macros.h"
 
 namespace Net

@@ -1,5 +1,17 @@
 CompileFlags:
-  Add: [
-    "-IDataStructures",
-    "-IUdpSockets"
-  ]
+    Add: [
+     "g++",
+     "src/main.cpp",
+     "-std=c++20",
+     "--debug",
+     "-Wall",
+     "-Wextra",
+     "-I./",
+     "-Iheaders",
+     "-DMONITORING_SERVICE_IMPLEMENTATION",
+     "-DCOMMANDS_IMPLEMENTATION",
+     "-DMACROS_IMPLEMENTATION",
+     "-DMANAGEMENT_IMPLEMENTATION",
+     "-DNET_IMPLEMENTATION",
+     "-DSOCKET_IMPLEMENTATION",
+    ]
