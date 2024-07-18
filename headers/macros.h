@@ -5,9 +5,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-
 #define NOMINMAX
 
+#define STRINGYFY(x) #x
 #define ARRAY_LENGTH(ARRAY) sizeof(ARRAY) / sizeof(ARRAY[0])
 #define ARRAY_LITERAL(type, ...) ((type[]){__VA_ARGS__})
 #define ARGS_LENGTH(type, ...) (sizeof((type[]){__VA_ARGS__}) / sizeof(type))
@@ -38,12 +38,55 @@ typedef bool (*eq)(void *lhs, void *rhs);
 typedef int (*comparer)(void *lhs, void *rhs);
 typedef uint32_t (*hashfn)(void *value);
 
-struct defer_t {
-    defer_t(std::function<void()> f) : f(f) {}
-    ~defer_t() { f(); }
-    std::function<void()> f;
+struct Defer {
+    Defer(std::function<void()> f) : f(f) {}
+    ~Defer() { f(); }
+    std::function<void()> &f;
 };
 
-#define defer(code) defer_t{[&](){code;}}
+#define defer(code) Defer{[&](){code;}}
+
+template <typename TCallable, typename TReturn>
+TReturn invoke_callable(TCallable *callable) {
+  return (TReturn) (*callable)();
+}
+
+template <typename TReturn = void*, typename FunctionPointer = TReturn (*)(void*), typename TCallable>
+FunctionPointer to_fnptr(const TCallable &callable) {
+  return  (FunctionPointer) invoke_callable<TCallable, TReturn>;
+}
+
+static inline void perrorcode(const char *message) {
+  fprintf(stderr, "Error Code: %d\n", errno);
+  perror(message);
+}
+
+static inline int msleep(long msec)
+{
+  struct timespec ts;
+  int res;
+  if (msec < 0)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+  ts.tv_sec = msec / 1000;
+  ts.tv_nsec = (msec % 1000) * 1000000;
+  do
+  {
+    res = nanosleep(&ts, &ts);
+  } while (res && errno == EINTR);
+  return res;
+}
+
+using string = std::string;
+using string_view = std::string_view;
+
+static inline string get_hostname()
+{
+  char hostname[1024];
+  gethostname(hostname, 1024);
+  return string(hostname);
+}
 
 #endif // MACROS_H_

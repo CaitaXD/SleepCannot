@@ -25,22 +25,22 @@ dockerrun:
 	docker run -d --name client0 --network bridge -t sleep_client
 	docker run -d --name client1 --network bridge -t sleep_client
 	docker run -d --name client2 --network bridge -t sleep_client
+	docker run -d --name client3 --network bridge -t sleep_client
 	docker run -d --name client4 --network bridge -t sleep_client
-	docker run -d --name client5 --network bridge -t sleep_client
 
 dockerclean:
 	docker kill server 
 	docker kill client0
 	docker kill client1
 	docker kill client2
+	docker kill client3
 	docker kill client4
-	docker kill client5
 	docker rm server
 	docker rm client0
 	docker rm client1
 	docker rm client2
+	docker rm client3
 	docker rm client4
-	docker rm client5
 	docker image rm sleep_server
 	docker image rm sleep_client
 
@@ -49,8 +49,11 @@ dockerrestart:
 	docker restart client0
 	docker restart client1
 	docker restart client2
+	docker restart client3
 	docker restart client4
-	docker restart client5
+
+docker: clean all dockerclean dockerbuild dockerrun
+
 	
 $(TARGET): $(OBJECTS)
 	@mkdir -p $(BIN_DIR)

@@ -15,18 +15,32 @@
 #include <string>
 #include <algorithm>
 #include <thread>
+#include <signal.h>
 
-#define COMMANDS_IMPLEMENTATION
-#include "../headers/commands.h"
-#undef COMMANDS_IMPLEMENTATION
+#define NET_IMPLEMENTATION
+#include "../headers/Net/Net.hpp"
+#undef NET_IMPLEMENTATION
+
+#define SOCKET_IMPLEMENTATION
+#include "../headers/Net/Socket.hpp"
+#undef SOCKET_IMPLEMENTATION
+
 
 #define DISCOVERY_SERVICE_IMPLEMENTATION
 #include "../headers/discovery_service.h"
 #undef DISCOVERY_SERVICE_IMPLEMENTATION
 
+#define MONITORING_SERVICE_IMPLEMENTATION
+#include "../headers/monitoring_service.h"
+#undef MONITORING_SERVICE_IMPLEMENTATION
+
+#define MANAGEMENT_IMPLEMENTATION
 #include "../headers/management.hpp"
-#include "../headers/Socket.hpp"
-#include <signal.h>
+#undef MANAGEMENT_IMPLEMENTATION
+
+#define COMMANDS_IMPLEMENTATION
+#include "../headers/commands.hpp"
+#undef COMMANDS_IMPLEMENTATION
 
 bool key_hit()
 {
@@ -39,114 +53,52 @@ bool key_hit()
 
 int server(int port)
 {
+  int discovery_port = port;
   int monitoring_port = port + 1;
+
   printf("Manager\n");
   help_msg_server();
-  DiscoveryService discovery_service{port};
-  discovery_service.start_server();
-  std::vector<MachineEndpoint> clients = {};
-  Socket s{};
-  s.open(AdressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
-  // Control reading and writting to manager table
   ParticipantTable participants;
-  mutex_data_t mutex_data = {std::mutex(), std::condition_variable(), false, 1, {0}};
-  std::thread table_readers[1];
-  std::thread table_writers[1];
-  // Update management table display thread
-  table_readers[0] = std::thread(print_management_table, std::ref(participants), std::ref(mutex_data), std::ref(mutex_data.read_count[0]));
+  DiscoveryService discovery_service{discovery_port};
+  MonitoringService monitoring_service{monitoring_port};
+
+  discovery_service.start_server();
+  monitoring_service.start_server(participants);
   while (1)
   {
     if (key_hit())
     {
-      command_exec(participants, mutex_data.mutex);
+      command_exec(participants);
     }
 
-    MachineEndpoint ep = {INADDR_ANY, port};
-    if (discovery_service.endpoints.dequeue(ep))
+    //participants.lock();
+    participants.print();
+    MachineEndpoint discoveredMachine = {};
+    if (discovery_service.endpoints.dequeue(discoveredMachine))
     {
-      if (std::find_if(clients.begin(), clients.end(), [&](IpEndPoint other)
-                       { return ep == other; }) == clients.end())
+      if (participants.map.find(discoveredMachine.hostname) == participants.map.end())
       {
-        // Adds new client to the management table
-        char *ip = inet_ntoa(((struct sockaddr_in *)&ep.addr)->sin_addr);
-        participant_t p = {ep.hostname, ep.mac, ip, true};
-        table_writers[0] = std::thread(add_participant, std::ref(participants), std::ref(p), std::ref(mutex_data));
-        clients.push_back(ep);
+        participants.add(participant_t{discoveredMachine, true, nullptr });
       }
     }
-
-    std::unique_lock<std::mutex> lock(mutex_data.mutex);
-    std::string packet{};
-    struct timeval timeout;
-    timeout.tv_sec = 3;
-    timeout.tv_usec = 0;
-    for (auto [hostname, participant] : participants)
-    {
-      if (participant.status)
-      {
-        packet.clear();
-        IpEndPoint sep{};
-        Socket socket{};
-        Socket cli{};
-        socket.open(AdressFamily::InterNetwork, SocketType::Stream);
-        socket.set_option(SO_REUSEADDR, 1);
-        socket.set_option(SO_RCVTIMEO, &timeout);
-        socket.set_option(SO_SNDTIMEO, &timeout);
-        int r;
-        int max_tries = 100;
-        do
-        {
-          r = socket.bind(monitoring_port);
-          msleep(100);
-        } while (errno == EADDRINUSE && max_tries--);
-        if (r < 0)
-        {
-          perror("bind");
-          goto finally_1;
-        }
-        r = socket.listen();
-        if (r < 0)
-        {
-          goto finally_1;
-        }
-        r = socket.accept(sep);
-        if (r < 0)
-        {
-          goto finally_1;
-        }
-        cli.sockfd = socket.client_socket;
-        cli.send("probe");
-        // r = cli.recv(&packet);
-        // if (errno == ETIMEDOUT)
-        // {
-        //   participant.status = false;
-        // }
-        // else if (packet == "probe")
-        // {
-        //   participant.status = true;
-        // }
-        // else if (r < 0){
-        //   perror("recv");
-        // }
-      finally_1:
-        socket.close();
-      }
-    }
+    //participants.unlock();
+    sleep((unsigned)(1/30.0f));
   }
-  table_readers[0].join();
-  discovery_service.stop();
-  s.close();
   return 0;
 }
 
 int client(int port)
 {
-  DiscoveryService discovery_service{port};
+  int discovery_port = port;
+  int monitoring_port = port + 1;
+
+  std::mutex mutex;
+  DiscoveryService discovery_service{discovery_port};
+  MonitoringService monitoring_service{monitoring_port};
   printf("Participant\n");
   help_msg_client();
   discovery_service.start_client();
-  Socket socket = {};
-  bool connected = false;
+
   while (1)
   {
     if (key_hit())
@@ -161,59 +113,12 @@ int client(int port)
         }
       }
     }
-
-    MachineEndpoint ep = {};
-    std::string cmd;
-    int r = -1;
-    if (!connected && discovery_service.endpoints.peek(ep))
-    {
-      std::cout << "Manager Endpoint: " << ep.to_string() << std::endl;
-      int max_tries = 100;
-      int monitoring_port = ep.get_port() + 1;
-      ep = ep.with_port(monitoring_port);
-      r = socket.open(AdressFamily::InterNetwork, SocketType::Stream);
-      if (r < 0)
-      {
-        goto finally_1;
-      }
-      do
-      {
-        r = socket.connect(ep);
-        msleep(100);
-      } while ((errno == EADDRINUSE || errno == ECONNREFUSED) && max_tries--);
-      if (r < 0)
-      {
-        perror("connect");
-        goto finally_1;
-      }
-      connected = true;
+    MachineEndpoint server{};
+    if (discovery_service.endpoints.dequeue(server) && !monitoring_service.running) {
+      std::cout << "Dyscovery: Endpoint" << server.to_string() << std::endl;
+      monitoring_service.start_client(server);
     }
-    if (!connected)
-    {
-      continue;
-    }
-    r = socket.recv(&cmd);
-    if (r <= 0)
-    {
-      goto finally_1;
-    }
-    if (cmd == "exit")
-    {
-      std::cout << "Exiting..." << std::endl;
-      goto finally_1;
-    }
-    else if (cmd == "probe")
-    {
-      std::cout << "Probing..." << std::endl;
-      socket.send("probe");
-      socket.recv(&cmd);
-    }
-    msleep(1000);
-  finally_1:
-    socket.close();
-    connected = false;
   }
-  discovery_service.stop();
   return 0;
 }
 

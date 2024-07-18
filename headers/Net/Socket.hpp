@@ -1,132 +1,23 @@
+#ifndef SOCKET_H_
+#define SOCKET_H_
+
 #include <iostream>
 #include <vector>
 #include <unordered_map>
 #include <string>
 #include <mutex>
 #include <condition_variable>
-
-#ifndef Socket_H_
-#define Socket_H_
-
-using string = std::string;
-
-enum AdressFamily
-{
-  InterNetwork = AF_INET,
-  IPv6 = AF_INET6
-};
-
-enum SocketType
-{
-  Stream = SOCK_STREAM,
-  Datagram = SOCK_DGRAM
-};
-
-enum SocketProtocol
-{
-  NotSpecified = 0,
-  TCP = IPPROTO_TCP,
-  UDP = IPPROTO_UDP
-};
-
-struct Adress
-{
-  union
-  {
-    uint32_t netwrok_order_address;
-    uint8_t bytes[4];
-  };
-
-  Adress(uint8_t a, uint8_t b, uint8_t c, uint8_t d) : bytes{a, b, c, d} {}
-  Adress(const uint8_t adress[4]) { memmove(bytes, adress, 4); }
-  Adress(in_addr_t address) : netwrok_order_address(htonl(address)) {}
-
-  static Adress parse(const string &ip)
-  {
-    auto addr = inet_addr(ip.c_str());
-    return Adress(addr);
-  }
-
-  in_addr_t host_order() const { return ntohl(netwrok_order_address); }
-  in_addr_t network_order() const { return netwrok_order_address; }
-};
-
-namespace InternetAdress
-{
-  const Adress Any = Adress{htonl(INADDR_ANY)};
-  const Adress Broadcast = Adress{htonl(INADDR_BROADCAST)};
-  const Adress Loopback = Adress{htonl(INADDR_LOOPBACK)};
-}
-
-typedef struct IpEndPoint
-{
-  socklen_t addrlen;
-  union
-  {
-    struct sockaddr addr;
-    struct sockaddr_in addr_in;
-  };
-
-  IpEndPoint()
-  {
-    addrlen = sizeof(struct sockaddr_in);
-  }
-
-  IpEndPoint(uint32_t address, int port)
-  {
-    addrlen = sizeof(struct sockaddr_in);
-    addr_in.sin_family = AdressFamily::InterNetwork;
-    addr_in.sin_addr.s_addr = htonl(address);
-    addr_in.sin_port = htons(port);
-  }
-
-  IpEndPoint(const string &ip, int port)
-  {
-    addrlen = sizeof(struct sockaddr_in);
-    addr_in.sin_family = AdressFamily::InterNetwork;
-    addr_in.sin_addr.s_addr = inet_addr(ip.c_str());
-    addr_in.sin_port = htons(port);
-  }
-
-  IpEndPoint(struct sockaddr_in addr_in) : addrlen(sizeof(addr_in)), addr_in(addr_in) {}
-
-  IpEndPoint with_port(int port) const
-  {
-    IpEndPoint ep = *this;
-    ep.addrlen = sizeof(ep.addr);
-    struct sockaddr_in *addr = (struct sockaddr_in *)&ep.addr;
-    addr->sin_port = htons(port);
-    return ep;
-  }
-
-  IpEndPoint with_address(in_addr_t address) const
-  {
-    IpEndPoint ep = *this;
-    ep.addrlen = sizeof(ep.addr);
-    struct sockaddr_in *addr = (struct sockaddr_in *)&ep.addr;
-    addr->sin_addr.s_addr = htonl(address);
-    return ep;
-  }
-
-  bool operator==(const IpEndPoint &other) const
-  {
-    return addrlen == other.addrlen && memcmp(&addr, &other.addr, addrlen) == 0;
-  }
-
-  static IpEndPoint broadcast(int port)
-  {
-    return IpEndPoint(InternetAdress::Broadcast.network_order(), port);
-  }
-} IpEndPoint;
+#include "Net.hpp"
 
 class Socket
 {
 public:
+  Socket(Socket &&other);
+  //Socket(const Socket &other);
   Socket(int sockfd);
   Socket();
   ~Socket();
   int sockfd;
-  int client_socket;
 
   int open(AdressFamily family, SocketType type, SocketProtocol protocol = SocketProtocol::NotSpecified);
   template <typename T>
@@ -145,19 +36,35 @@ public:
   int bind(const IpEndPoint &ep);
   int bind(Adress address, int port);
   int listen(int backlog = 5);
-  int accept(IpEndPoint &ep);
+  Socket accept(IpEndPoint &ep);
+
+  constexpr Socket& operator=(Socket &&other);
+  Socket & operator=(const Socket&) = delete;
 };
 
+#endif // SOCKET_H_
+#ifdef SOCKET_IMPLEMENTATION
+
+Socket::Socket(Socket &&other) : sockfd(other.sockfd)
+{
+  other.sockfd = -1;
+}
+//Socket::Socket(const Socket &other) : sockfd(other.sockfd) {}
 Socket::Socket() : sockfd(-1) {}
-
 Socket::Socket(int sockfd) : sockfd(sockfd) {}
-
 Socket::~Socket()
 {
   if (sockfd != -1)
   {
     ::close(sockfd);
   }
+}
+
+constexpr Socket& Socket::operator=(Socket &&other)
+{
+  sockfd = other.sockfd;
+  other.sockfd = -1;
+  return *this;
 }
 
 int Socket::open(AdressFamily family, SocketType type, SocketProtocol protocol)
@@ -226,7 +133,7 @@ int Socket::bind(int port)
 {
   struct sockaddr_in server_addr = {};
   server_addr.sin_family = AdressFamily::InterNetwork;
-  server_addr.sin_addr.s_addr = INADDR_ANY;
+  server_addr.sin_addr.s_addr = InternetAdress::Any.network_order();
   server_addr.sin_port = htons(port);
   return ::bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr));
 }
@@ -250,9 +157,14 @@ int Socket::listen(int backlog)
   return ::listen(sockfd, backlog);
 }
 
-int Socket::accept(IpEndPoint &ep)
+Socket Socket::accept(IpEndPoint &ep)
 {
-  return ::accept(sockfd, (struct sockaddr *)&ep.addr, &ep.addrlen);
+  int client_socket = ::accept(sockfd, (struct sockaddr *)&ep.addr, &ep.addrlen);
+  if (client_socket < 0)
+  {
+    return Socket(-1);
+  }
+  return Socket(client_socket);
 }
 
 int Socket::recv(string *payload, IpEndPoint &ep, int flags)
@@ -276,4 +188,5 @@ int Socket::connect(const IpEndPoint &ep)
 {
   return ::connect(sockfd, (struct sockaddr *)&ep.addr, ep.addrlen);
 }
-#endif // Socket_H_
+
+#endif // SOCKET_IMPLEMENTATION
