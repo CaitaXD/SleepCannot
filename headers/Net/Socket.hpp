@@ -7,17 +7,18 @@
 #include <string>
 #include <mutex>
 #include <condition_variable>
+#include <poll.h>
 #include "Net.hpp"
 
 class Socket
 {
 public:
   Socket(Socket &&other);
-  // Socket(const Socket &other);
   Socket(int sockfd);
   Socket();
   ~Socket();
   int file_descriptor;
+  bool keep_alive;
 
   int open(AddressFamily family, SocketType type, SocketProtocol protocol = SocketProtocol::NotSpecified);
   int open(SocketType type, SocketProtocol protocol = SocketProtocol::NotSpecified);
@@ -42,6 +43,13 @@ public:
 
   constexpr Socket &operator=(Socket &&other);
   Socket &operator=(const Socket &) = delete;
+
+  bool operator>(const Socket &other) const;
+  bool operator<(const Socket &other) const;
+  bool operator==(const Socket &other) const;
+  bool operator!=(const Socket &other) const;
+
+  static std::vector<pollfd> poll(std::vector<Socket*> &sockets, int &num_events, int timeout);
 };
 
 #endif // SOCKET_H_
@@ -54,10 +62,14 @@ Socket::Socket(Socket &&other)
   file_descriptor = fd;
 }
 // Socket::Socket(const Socket &other) : sockfd(other.sockfd) {}
-Socket::Socket() : file_descriptor(-1) {}
-Socket::Socket(int sockfd) : file_descriptor(sockfd) {}
+Socket::Socket() : file_descriptor(-1), keep_alive(false) {}
+Socket::Socket(int file_descriptor) : file_descriptor(file_descriptor), keep_alive(false) {}
 Socket::~Socket()
 {
+  if (keep_alive)
+  {
+    return;
+  }
   if (file_descriptor != -1)
   {
     ::close(file_descriptor);
@@ -209,4 +221,36 @@ int Socket::connect(const IpEndpoint &ep)
   return ::connect(file_descriptor, (struct sockaddr *)&ep.socket_address, ep.address_length);
 }
 
+std::vector<pollfd> Socket::poll(std::vector<Socket*> &sockets, int &num_events, int timeout)
+{
+  nfds_t size = sockets.size();
+  pollfd fds[size];
+  for (nfds_t i = 0; i < size; i++)
+  {
+    fds[i].fd = sockets[i]->file_descriptor;
+    fds[i].events = POLLIN;
+  }
+  num_events = ::poll(fds, size, timeout);
+  return std::vector<pollfd>(fds, fds + size);
+}
+
+bool Socket::operator>(const Socket &other) const
+{
+  return file_descriptor > other.file_descriptor;
+}
+
+bool Socket::operator<(const Socket &other) const
+{
+  return file_descriptor < other.file_descriptor;
+}
+
+bool Socket::operator==(const Socket &other) const
+{
+  return file_descriptor == other.file_descriptor;
+}
+
+bool Socket::operator!=(const Socket &other) const
+{
+  return file_descriptor != other.file_descriptor;
+}
 #endif // SOCKET_IMPLEMENTATION

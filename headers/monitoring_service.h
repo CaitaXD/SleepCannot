@@ -74,7 +74,6 @@ void MonitoringService::start_server(ParticipantTable &participants)
     while(ms->running)
     {   
       ms->participants->lock();
-      std::vector<string> to_remove;
       for (auto [host, participant] : ms->participants->map) {
         if (participant.socket->file_descriptor == -1) {
           IpEndpoint client_endpoint;
@@ -83,22 +82,37 @@ void MonitoringService::start_server(ParticipantTable &participants)
           *participant.socket = std::move(client_socket);
         }
         result = participant.socket->send("probe from server");
-        std::string cmd;
-        result = participant.socket->recv(&cmd);
-        if (result < 0) {
-          perrorcode("recv");
-          continue;
-        }
-        if (cmd == "probe from client")
-        {
-          participant.status = true;
-        }
-        else if (cmd == "exit")
-        {
-          participant.socket->close();
-          to_remove.push_back(host);
-        }
       }
+      msleep(1001);
+      std::vector<string> to_remove;
+
+      // int num_events;
+      // std::vector<Socket*> to_poll = std::vector<Socket*>(ms->participants->map.size());
+      // for (auto [host, participant] : ms->participants->map) {
+      //   to_poll.emplace_back(participant.socket.get());
+      // }
+      // std::vector<pollfd> poll_result = Socket::poll(to_poll, num_events, 5000);
+      // for (auto &poll : poll_result) {
+      //   if (poll.revents & POLLIN) {
+      //     Socket client_socket = Socket{poll.fd};
+      //     client_socket.keep_alive = true;
+      //     std::string cmd;
+      //     result = client_socket.recv(&cmd);
+      //     if (result <= 0) {
+      //       auto begin = ms->participants->map.begin();
+      //       auto end = ms->participants->map.end();
+      //       auto neeedle = std::find_if(begin, end, [&client_socket](const auto &pair) {
+      //         return pair.second.socket->file_descriptor == client_socket.file_descriptor;
+      //       });
+      //       if (neeedle != end) {
+      //         to_remove.push_back(neeedle->first);
+      //       }
+      //       perrorcode("recv");
+      //       continue;
+      //     }
+      //   }
+      // }
+
       for (auto host : to_remove) {
         ms->participants->remove(host);
       }
@@ -144,6 +158,7 @@ void MonitoringService::start_client(const IpEndpoint &server_machine)
       std::cout << "Received: " << cmd << " from " << ms->server_machine.to_string() << std::endl;
       if (cmd == "probe from server")
       {
+        msleep(1001);
         result |= client_socket.send("probe from client");
         if (result == 0){
           continue;
