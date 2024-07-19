@@ -16,7 +16,10 @@
 #include <unistd.h>
 #include <vector>
 #include <pthread.h>
+#include <fcntl.h>
+#include <poll.h>
 #include "macros.h"
+#include "Net/Net.hpp"
 #include "management.hpp"
 
 class MonitoringService
@@ -27,17 +30,17 @@ public:
 
 private:
   pthread_t thread;
-  MachineEndpoint server_machine;
+  IpEndpoint server_machine;
   ParticipantTable *participants;
 
 public:
-  MonitoringService(int port) : port(port) {}
+  MonitoringService(int port) : running(false), port(port) {}
   ~MonitoringService()
   {
     stop();
   }
   void start_server(ParticipantTable &participants);
-  void start_client(MachineEndpoint &server_machine);
+  void start_client(const IpEndpoint &server_machine);
   void stop();
 };
 
@@ -47,113 +50,105 @@ public:
 
 void MonitoringService::start_server(ParticipantTable &participants)
 {
+  if (running)
+  {
+    return;
+  }
   running = true;
   this->participants = std::addressof(participants);
   pthread_create(&thread, NULL, [](void *data) -> void *
                  {
     MonitoringService *ms = (MonitoringService *)data;
-    Socket server{};
-    struct timeval timeout {
-      .tv_sec = 3,
-      .tv_usec = 0
-    };
-    int result = server.open(AdressFamily::InterNetwork, SocketType::Stream, SocketProtocol::TCP);
-    result |= server.bind(ms->port);
-    result |= server.set_option(SO_REUSEADDR, 1);
-    result |= server.set_option(SO_RCVTIMEO, timeout);
-    result |= server.set_option(SO_SNDTIMEO, timeout);
-      
+    Socket server_socket{};
+    int result = server_socket.open(SocketType::Stream, SocketProtocol::TCP);
+    result |= server_socket.bind(ms->port); 
+    result |= server_socket.set_option(SO_REUSEADDR, 1);
+    result |= server_socket.listen();
     if(result < 0)
     {
       perrorcode("start_server");
       return NULL;
     }
 
-    std::string packet{};
-    //while(1)
+    std::string packet;
+    while(ms->running)
     {   
       ms->participants->lock();
-      //for (auto [host, participant] : ms->participants->map) {
-      auto &[host, participant] = *ms->participants->map.begin(); {
-        if (participant.socket == nullptr || participant.socket->sockfd == -1)
-        {
-          result |= server.listen();
-          if (result < 0) {
-            perrorcode("listen");
-            return NULL;
-          }
-          IpEndPoint client_endpoint{};
-          Socket client = server.accept(client_endpoint);
-          if (client.sockfd < 0) {
-            perrorcode("accept");
-            return NULL;
-          }
-          else {
-            std::cout << "Accepted connection from: " << client_endpoint.to_string() << std::endl;
-            if(participant.socket == nullptr) {
-              participant.socket = std::make_shared<Socket>(std::move(client));
-            }
-            else {
-              *participant.socket = std::move(client);
-            }
-          }
-          result |= participant.socket->set_option(SO_RCVTIMEO, &timeout);
-          result |= participant.socket->set_option(SO_SNDTIMEO, &timeout);
+      std::vector<string> to_remove;
+      for (auto [host, participant] : ms->participants->map) {
+        if (participant.socket->file_descriptor == -1) {
+          IpEndpoint client_endpoint;
+          Socket client_socket = server_socket.accept(client_endpoint);
+          result |= client_socket.file_descriptor;
+          *participant.socket = std::move(client_socket);
         }
-        else {
-          Socket &client = *participant.socket;
-          std::string cmd;
-          result |= client.send("probe");
-          std::cout << "Sending probe to " << host << std::endl;
-          result |= client.recv(&cmd);
-          if (cmd == "probe")
-          {
-            std::cout << "Received probe from " << host << std::endl;
-            participant.status = true;
-            participant.socket->close();
-          }
+        result = participant.socket->send("probe from server");
+        std::string cmd;
+        result = participant.socket->recv(&cmd);
+        if (result < 0) {
+          perrorcode("recv");
+          continue;
+        }
+        if (cmd == "probe from client")
+        {
+          participant.status = true;
+        }
+        else if (cmd == "exit")
+        {
+          participant.socket->close();
+          to_remove.push_back(host);
         }
       }
+      for (auto host : to_remove) {
+        ms->participants->remove(host);
+      }
+      ms->participants->unlock();
     }
+    std::cout << "Monitoring Service Stopped" << std::endl;
     ms->running = false;
     return NULL; }, this);
 }
 
-void MonitoringService::start_client(MachineEndpoint &server_machine)
+void MonitoringService::start_client(const IpEndpoint &server_machine)
 {
+  if (running)
+  {
+    return;
+  }
   running = true;
   this->server_machine = server_machine.with_port(port);
   pthread_create(&thread, NULL, [](void *data) -> void *
                  {
     MonitoringService *ms = (MonitoringService *)data;
     int result = 0;
-    Socket socket{};
-    while (result < 0) {
-      result = socket.open(AdressFamily::InterNetwork, SocketType::Stream, SocketProtocol::TCP);
-      result |= socket.connect(ms->server_machine);
-      if (result < 0)
-      {
-        perror("connect");
-        continue;
-      }
+    Socket client_socket{};
+    result = client_socket.open(SocketType::Stream, SocketProtocol::TCP);
+    result |= client_socket.connect(ms->server_machine);
+    if (result < 0)
+    {
+      perror("connect");
+      return NULL;
     }
-    std::cout << "Monitoring Endpoint: " << ms->server_machine.to_string() << std::endl;
     std::string cmd;
     
     while (ms->running)
     {
-      result |= socket.recv(&cmd);
-      if (cmd == "exit")
-      {
-        std::cout << "Exiting..." << std::endl;
-        ms->running = false;
-        return NULL;
+      result = client_socket.recv(&cmd);
+      if (result == 0) {
+        continue;
       }
-      else if (cmd == "probe")
+      else if (result < 0) {
+        perrorcode("recv");
+        continue;
+      }
+      std::cout << "Received: " << cmd << " from " << ms->server_machine.to_string() << std::endl;
+      if (cmd == "probe from server")
       {
-        std::cout << "Probing..." << std::endl;
-        result |= socket.send("probe");
-        if (result < 0) {
+        result |= client_socket.send("probe from client");
+        if (result == 0){
+          continue;
+        }
+        else if (result < 0) {
           perrorcode("recv");
         }
       }

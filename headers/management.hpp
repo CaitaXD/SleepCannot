@@ -75,48 +75,53 @@ struct MacAddress
     }
 };
 
-struct MachineEndpoint : IpEndPoint
+struct MachineEndpoint : IpEndpoint
 {
     MacAddress mac;
     string hostname;
 
-    MachineEndpoint() : IpEndPoint() {}
-    MachineEndpoint(in_addr_t address, int port) : IpEndPoint(address, port) {}
-    MachineEndpoint(struct sockaddr_in addr_in) : IpEndPoint(addr_in) {}
+    MachineEndpoint() : IpEndpoint() {}
+    MachineEndpoint(in_addr_t address, int port) : IpEndpoint(address, port) {}
+    MachineEndpoint(sockaddr socket_address) : IpEndpoint(socket_address) {}
 
     MachineEndpoint with_port(int port) const
     {
         MachineEndpoint ep = *this;
-        ep.addr_in.sin_port = htons(port);
+        struct sockaddr_in *ipv4_socket_address = (sockaddr_in *)&ep.socket_address;
+        ipv4_socket_address->sin_port = htons(port);
         return ep;
     }
 
     MachineEndpoint with_address(uint32_t address) const
     {
         MachineEndpoint ep = *this;
-        ep.addr_in.sin_addr.s_addr = htonl(address);
+        struct sockaddr_in *ipv4_socket_address = (sockaddr_in *)&ep.socket_address;
+        ipv4_socket_address->sin_addr.s_addr = htonl(address);
         return ep;
     }
 
     int get_port() const
     {
-        return ntohs(((struct sockaddr_in *)&addr)->sin_port);
+        return ntohs(((struct sockaddr_in *)&socket_address)->sin_port);
     }
 
     string to_string() const
     {
-        auto ip = inet_ntoa(((struct sockaddr_in *)&addr)->sin_addr);
-        auto port = ntohs(((struct sockaddr_in *)&addr)->sin_port);
+        auto ip = inet_ntoa(((struct sockaddr_in *)&socket_address)->sin_addr);
+        auto port = ntohs(((struct sockaddr_in *)&socket_address)->sin_port);
         return hostname + " " + mac.mac_str + " " + string(ip) + ":" + std::to_string(port);
     }
 
-    static MachineEndpoint MyMachine(Net::Adress address, int port)
+    static MachineEndpoint MyMachine(Address address, int port)
     {
         MachineEndpoint ep;
-        ep.addrlen = sizeof(struct sockaddr_in);
-        ep.addr_in.sin_family = AdressFamily::InterNetwork;
-        ep.addr_in.sin_addr.s_addr = address.network_order();
-        ep.addr_in.sin_port = htons(port);
+        sockaddr_in *ipv4_socket_address = (sockaddr_in *)&ep.socket_address;
+        bzero(ipv4_socket_address, sizeof(*ipv4_socket_address));
+
+        ep.address_length = sizeof(struct sockaddr_in);
+        ipv4_socket_address->sin_family = AddressFamily::InterNetwork;
+        ipv4_socket_address->sin_addr.s_addr = address.network_order();
+        ipv4_socket_address->sin_port = htons(port);
         ep.mac = MacAddress::get_mac();
         ep.hostname = get_hostname();
         return ep;
@@ -142,7 +147,7 @@ public:
     ParticipantTable();
     ~ParticipantTable();
 
-    std::unique_lock<std::mutex> lock();
+    void lock();
     void unlock();
     void print();
     void add(const participant_t &participant);
@@ -206,10 +211,9 @@ ParticipantTable::~ParticipantTable()
     unlock();
 }
 
-std::unique_lock<std::mutex> ParticipantTable::lock()
+void ParticipantTable::lock()
 {
-    std::unique_lock<std::mutex> lock(sync_root);
-    return lock;
+    sync_root.lock();
 }
 
 void ParticipantTable::unlock()

@@ -13,76 +13,86 @@ class Socket
 {
 public:
   Socket(Socket &&other);
-  //Socket(const Socket &other);
+  // Socket(const Socket &other);
   Socket(int sockfd);
   Socket();
   ~Socket();
-  int sockfd;
+  int file_descriptor;
 
-  int open(AdressFamily family, SocketType type, SocketProtocol protocol = SocketProtocol::NotSpecified);
+  int open(AddressFamily family, SocketType type, SocketProtocol protocol = SocketProtocol::NotSpecified);
+  int open(SocketType type, SocketProtocol protocol = SocketProtocol::NotSpecified);
   template <typename T>
   int set_option(int option, T value);
   template <typename T>
   int set_option(int option, T *value);
 
   int connect(const string &ip, int port);
-  int connect(const IpEndPoint &ep);
+  int connect(const IpEndpoint &ep);
   int send(const string &payload, int flags = 0);
   int recv(string *payload, int flags = 0);
-  int send(const string &payload, const IpEndPoint &ep, int flags = 0);
-  int recv(string *payload, IpEndPoint &ep, int flags = 0);
+  int send(const string &payload, const IpEndpoint &ep, int flags = 0);
+  int recv(string *payload, IpEndpoint &ep, int flags = 0);
   int close();
   int bind(int port);
-  int bind(const IpEndPoint &ep);
-  int bind(Adress address, int port);
+  int bind(const IpEndpoint &ep);
+  int bind(Address address, int port);
+  int bind(string address, int port);
   int listen(int backlog = 5);
-  Socket accept(IpEndPoint &ep);
+  Socket accept(IpEndpoint &ep);
 
-  constexpr Socket& operator=(Socket &&other);
-  Socket & operator=(const Socket&) = delete;
+  constexpr Socket &operator=(Socket &&other);
+  Socket &operator=(const Socket &) = delete;
 };
 
 #endif // SOCKET_H_
 #ifdef SOCKET_IMPLEMENTATION
 
-Socket::Socket(Socket &&other) : sockfd(other.sockfd)
+Socket::Socket(Socket &&other)
 {
-  other.sockfd = -1;
+  int fd = other.file_descriptor;
+  other.file_descriptor = -1;
+  file_descriptor = fd;
 }
-//Socket::Socket(const Socket &other) : sockfd(other.sockfd) {}
-Socket::Socket() : sockfd(-1) {}
-Socket::Socket(int sockfd) : sockfd(sockfd) {}
+// Socket::Socket(const Socket &other) : sockfd(other.sockfd) {}
+Socket::Socket() : file_descriptor(-1) {}
+Socket::Socket(int sockfd) : file_descriptor(sockfd) {}
 Socket::~Socket()
 {
-  if (sockfd != -1)
+  if (file_descriptor != -1)
   {
-    ::close(sockfd);
+    ::close(file_descriptor);
   }
 }
 
-constexpr Socket& Socket::operator=(Socket &&other)
+constexpr Socket &Socket::operator=(Socket &&other)
 {
-  sockfd = other.sockfd;
-  other.sockfd = -1;
+  int fd = other.file_descriptor;
+  file_descriptor = fd;
+  other.file_descriptor = -1;
   return *this;
 }
 
-int Socket::open(AdressFamily family, SocketType type, SocketProtocol protocol)
+int Socket::open(AddressFamily family, SocketType type, SocketProtocol protocol)
 {
-  sockfd = ::socket(family, type, protocol);
-  return sockfd;
+  file_descriptor = ::socket(family, type, protocol);
+  return file_descriptor;
+}
+
+int Socket::open(SocketType type, SocketProtocol protocol)
+{
+  return open(AddressFamily::InterNetwork, type, protocol);
 }
 
 template <typename T>
 int Socket::set_option(int option, T value)
 {
-  return ::setsockopt(sockfd, SOL_SOCKET, option, &value, sizeof(value));
+  return ::setsockopt(file_descriptor, SOL_SOCKET, option, &value, sizeof(value));
 }
 
 template <typename T>
 int Socket::set_option(int option, T *value)
 {
-  return ::setsockopt(sockfd, SOL_SOCKET, option, value, sizeof(*value));
+  return ::setsockopt(file_descriptor, SOL_SOCKET, option, value, sizeof(*value));
 }
 
 int Socket::connect(const string &ip, int port)
@@ -95,7 +105,7 @@ int Socket::connect(const string &ip, int port)
     return -1;
   }
 
-  if (::connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
+  if (::connect(file_descriptor, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
   {
     return -1;
   }
@@ -104,13 +114,13 @@ int Socket::connect(const string &ip, int port)
 
 int Socket::send(const string &payload, int flags)
 {
-  return ::send(sockfd, payload.c_str(), payload.size(), flags);
+  return ::send(file_descriptor, payload.c_str(), payload.size(), flags);
 }
 
 int Socket::recv(string *payload, int flags)
 {
   char buffer[1024] = {0};
-  int bytesReceived = ::recv(sockfd, buffer, 1024, flags);
+  int bytesReceived = ::recv(file_descriptor, buffer, 1023, flags);
   if (bytesReceived < 0)
   {
     return -1;
@@ -121,56 +131,66 @@ int Socket::recv(string *payload, int flags)
 
 int Socket::close()
 {
-  if (::close(sockfd) < 0)
+  if (::close(file_descriptor) < 0)
   {
     return -1;
   }
-  sockfd = -1;
+  file_descriptor = -1;
   return 0;
 }
 
 int Socket::bind(int port)
 {
   struct sockaddr_in server_addr = {};
-  server_addr.sin_family = AdressFamily::InterNetwork;
-  server_addr.sin_addr.s_addr = InternetAdress::Any.network_order();
+  server_addr.sin_family = AddressFamily::InterNetwork;
+  server_addr.sin_addr.s_addr = InternetAddress::Any.network_order();
   server_addr.sin_port = htons(port);
-  return ::bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr));
+  return ::bind(file_descriptor, (struct sockaddr *)&server_addr, sizeof(server_addr));
 }
 
-int Socket::bind(Adress address, int port)
+int Socket::bind(Address address, int port)
 {
   struct sockaddr_in server_addr = {};
-  server_addr.sin_family = AdressFamily::InterNetwork;
+  server_addr.sin_family = AddressFamily::InterNetwork;
   server_addr.sin_addr.s_addr = address.network_order();
   server_addr.sin_port = htons(port);
-  return ::bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr));
+  return ::bind(file_descriptor, (struct sockaddr *)&server_addr, sizeof(server_addr));
 }
 
-int Socket::bind(const IpEndPoint &ep)
+int Socket::bind(const IpEndpoint &ep)
 {
-  return ::bind(sockfd, (struct sockaddr *)&ep.addr, ep.addrlen);
+  return ::bind(file_descriptor, (struct sockaddr *)&ep.socket_address, ep.address_length);
+}
+
+int Socket::bind(string address, int port)
+{
+  struct sockaddr_in ipv4_socket_address;
+  bzero(&ipv4_socket_address, sizeof(ipv4_socket_address));
+  ipv4_socket_address.sin_family = AddressFamily::InterNetwork;
+  ipv4_socket_address.sin_addr.s_addr = inet_addr(address.c_str());
+  ipv4_socket_address.sin_port = htons(port);
+  return ::bind(file_descriptor, (struct sockaddr *)&ipv4_socket_address, sizeof(ipv4_socket_address));
 }
 
 int Socket::listen(int backlog)
 {
-  return ::listen(sockfd, backlog);
+  return ::listen(file_descriptor, backlog);
 }
 
-Socket Socket::accept(IpEndPoint &ep)
+Socket Socket::accept(IpEndpoint &ep)
 {
-  int client_socket = ::accept(sockfd, (struct sockaddr *)&ep.addr, &ep.addrlen);
+  int client_socket = ::accept(file_descriptor, (struct sockaddr *)&ep.socket_address, &ep.address_length);
   if (client_socket < 0)
   {
-    return Socket(-1);
+    return Socket{};
   }
   return Socket(client_socket);
 }
 
-int Socket::recv(string *payload, IpEndPoint &ep, int flags)
+int Socket::recv(string *payload, IpEndpoint &ep, int flags)
 {
   char buffer[1024]{};
-  int bytes_received = ::recvfrom(sockfd, buffer, 1024, flags, &ep.addr, &ep.addrlen);
+  int bytes_received = ::recvfrom(file_descriptor, buffer, 1024, flags, &ep.socket_address, &ep.address_length);
   if (bytes_received < 0)
   {
     return -1;
@@ -179,14 +199,14 @@ int Socket::recv(string *payload, IpEndPoint &ep, int flags)
   return bytes_received;
 }
 
-int Socket::send(const string &payload, const IpEndPoint &ep, int flags)
+int Socket::send(const string &payload, const IpEndpoint &ep, int flags)
 {
-  return ::sendto(sockfd, payload.c_str(), payload.size(), flags, &ep.addr, ep.addrlen);
+  return ::sendto(file_descriptor, payload.c_str(), payload.size(), flags, &ep.socket_address, ep.address_length);
 }
 
-int Socket::connect(const IpEndPoint &ep)
+int Socket::connect(const IpEndpoint &ep)
 {
-  return ::connect(sockfd, (struct sockaddr *)&ep.addr, ep.addrlen);
+  return ::connect(file_descriptor, (struct sockaddr *)&ep.socket_address, ep.address_length);
 }
 
 #endif // SOCKET_IMPLEMENTATION

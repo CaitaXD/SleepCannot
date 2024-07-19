@@ -11,6 +11,8 @@
 #include <string>
 #include <time.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <ifaddrs.h>
 
 #define NOMINMAX
 
@@ -21,9 +23,10 @@
 #define UNPACK_ARRAY(ARRAY) ARRAY, ARRAY_LENGTH(ARRAY)
 
 #define SCOPE(VAR) for (VAR, *_once = NULL + 1; _once; _once = NULL)
-#define STATEMENT(...)                                                         \
-  do {                                                                         \
-    __VA_ARGS__                                                                \
+#define STATEMENT(...) \
+  do                   \
+  {                    \
+    __VA_ARGS__        \
   } while (0)
 
 #define CONCAT_(A, B) A##B
@@ -36,7 +39,7 @@
 #define MAX(A, B) ((A) > (B) ? (A) : (B))
 #define CLAMP(X, MIN, MAX) ((X) < (MIN) ? (MIN) : ((X) > (MAX) ? (MAX) : (X)))
 
-#define IS_SAME_TYPE(X, Y) (_Generic((X), typeof(Y) : 1, default : 0))
+#define IS_SAME_TYPE(X, Y) (_Generic((X), typeof(Y): 1, default: 0))
 #define ASSERT_TYPE(X, Y) (assert(IS_SAME_TYPE(X, Y) && "Type Missmatch"))
 
 #define Ref(X) ((typeof(X)[1]){X})
@@ -45,27 +48,35 @@ typedef bool (*eq)(void *lhs, void *rhs);
 typedef int (*comparer)(void *lhs, void *rhs);
 typedef uint32_t (*hashfn)(void *value);
 
-struct Defer {
-    Defer(std::function<void()> f) : f(f) {}
-    ~Defer() { f(); }
-    std::function<void()> &f;
+struct Defer
+{
+  Defer(std::function<void()> f) : f(f) {}
+  ~Defer() { f(); }
+  std::function<void()> &f;
 };
 
-#define defer(code) Defer{[&](){code;}}
+#define defer(code) \
+  Defer             \
+  {                 \
+    [&]() { code; } \
+  }
 
 template <typename TCallable, typename TReturn>
-TReturn invoke_callable(TCallable *callable) {
-  return (TReturn) (*callable)();
+TReturn invoke_callable(TCallable *callable)
+{
+  return (TReturn)(*callable)();
 }
 
-template <typename TReturn = void*, typename FunctionPointer = TReturn (*)(void*), typename TCallable>
-FunctionPointer to_fnptr(const TCallable &callable) {
-  return  (FunctionPointer) invoke_callable<TCallable, TReturn>;
+template <typename TReturn = void *, typename FunctionPointer = TReturn (*)(void *), typename TCallable>
+FunctionPointer to_fnptr(const TCallable &callable)
+{
+  return (FunctionPointer)invoke_callable<TCallable, TReturn>;
 }
 
-static inline void perrorcode(const char *message) {
-  fprintf(stderr, "Error Code: %d\n", errno);
+static inline void perrorcode(const char *message)
+{
   perror(message);
+  std::cerr << " errno: " << errno << std::endl;
 }
 
 static inline int msleep(long msec)
@@ -92,7 +103,7 @@ using string_view = std::string_view;
 static inline string get_hostname()
 {
   char hostname[1024];
-  gethostname(hostname, 1024);
+  gethostname(hostname, 1024 - 1);
   return string(hostname);
 }
 

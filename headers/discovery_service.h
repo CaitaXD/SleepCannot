@@ -28,7 +28,7 @@ class DiscoveryService
     int port;
 
 public:
-    DiscoveryService(int port) : port(port) {}
+    DiscoveryService(int port) : running(false), port(port) {}
     ~DiscoveryService()
     {
         stop();
@@ -43,18 +43,20 @@ public:
 
 void DiscoveryService::start_server()
 {
+    if (running)
+    {
+        return;
+    }
+
     running = true;
     pthread_create(&thread, NULL, [](void *data) -> void *
                    {
         DiscoveryService *ds = (DiscoveryService *)data;
-        Socket s{};
-        s.open(AdressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
-        if (s.bind(InternetAdress::Any, ds->port) < 0)
-        {
-            perror("bind");
-            return NULL;
-        }
-        if (s.set_option(SO_BROADCAST, 1) < 0)
+        Socket server_socket{};
+        server_socket.open(AddressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
+        int result = server_socket.bind(InternetAddress::Any, ds->port);
+        result |= server_socket.set_option(SO_BROADCAST, 1);
+        if (result < 0)
         {
             perror("set_option");
             return NULL;
@@ -63,7 +65,7 @@ void DiscoveryService::start_server()
         while (ds->running)
         {
             MachineEndpoint client_machine{};
-            if (s.recv(&buffer, client_machine, MSG_DONTWAIT) < 0)
+            if (server_socket.recv(&buffer, client_machine, MSG_DONTWAIT) < 0)
             {
                 if (errno == EAGAIN)
                 {
@@ -98,7 +100,7 @@ void DiscoveryService::start_server()
                 client_machine.hostname = client_hostname;
     
                 ds->endpoints.enqueue(client_machine);
-                s.send(server_msg, client_machine, MSG_DONTWAIT);
+                server_socket.send(server_msg, client_machine, MSG_DONTWAIT);
             }
         }
         ds->running = false;
@@ -107,61 +109,58 @@ void DiscoveryService::start_server()
 
 void DiscoveryService::start_client()
 {
+    if (running)
+    {
+        return;
+    }
+
     running = true;
     pthread_create(&thread, NULL, [](void *data) -> void *
                    {
+        string client_message;
+        MacAddress mac = MacAddress::get_mac();
+        string hostname = get_hostname();
+        int hostname_len = hostname.length();
+
+        client_message.append(client_msg);
+
+        client_message.append((char *)&(hostname_len), sizeof(hostname_len));
+        client_message.append(hostname);
+        
+        client_message.append((char *)mac.mac_addr, MAC_ADDR_MAX);
+        client_message.append(mac.mac_str, MAC_STR_MAX);
+        
         DiscoveryService *ds = std::move((DiscoveryService *)data);
-        Socket s{};
-        if (s.open(AdressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP) < 0)
-        {
-            perror("open");
-            return NULL;
-        }
-        // if (s.bind(InternetAdress::Any, ds->port) < 0)
-        // {
-        //     perror("bind");
-        //     return NULL;
-        // }
-        if (s.set_option(SO_BROADCAST, 1) < 0)
-        {
-            perror("set_option");
-            return NULL;
-        }
-        IpEndPoint braodcast_ep = IpEndPoint::broadcast(ds->port);
-        string buffer;
+        Socket client_socket;
+        IpEndpoint braodcast_ep = IpEndpoint::broadcast(ds->port);
+        
+        int result = client_socket.open(AddressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
+        result |= client_socket.bind(InternetAddress::Any, ds->port);
+        result |= client_socket.set_option(SO_BROADCAST, 1);
+
         while (ds->running)
         {
-            buffer.clear();
-            MachineEndpoint ep{};
-            MacAddress mac = MacAddress::get_mac();
-            char hostname[HOSTNAME_LEN];
-            gethostname(hostname, HOSTNAME_LEN);
-            int hostname_len = strlen(hostname);
-
-            buffer.append(client_msg);
-            buffer.append((char *)&(hostname_len), sizeof(hostname_len));
-            buffer.append(hostname, hostname_len);
-            buffer.append((char *)mac.mac_addr, MAC_ADDR_MAX);
-            buffer.append(mac.mac_str, MAC_STR_MAX);
-
-            if (s.send(buffer, braodcast_ep) < 0)
+          
+            if (client_socket.send(client_message, braodcast_ep) < 0)
             {
                 perror("send");
                 continue;
             }
             msleep(100);
-            int read = s.recv(&buffer, ep, MSG_DONTWAIT);
+            MachineEndpoint server_endpoint;
+            string recv_buffer;
+            int read = client_socket.recv(&client_message, server_endpoint, MSG_DONTWAIT);
             if (read < 0)
             {
                 continue;
             }
-            string_view msg = string_view(buffer.data(), read).substr(0, read);
+            string_view msg = string_view(client_message.data(), read).substr(0, read);
             if (msg == server_msg)
             {
                 MachineEndpoint top{INADDR_ANY, ds->port};
                 if (!ds->endpoints.peek(top))
                 {
-                    ds->endpoints.enqueue(ep);
+                    ds->endpoints.enqueue(server_endpoint);
                 }
                 return NULL;
             }

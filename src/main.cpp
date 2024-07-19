@@ -26,7 +26,6 @@
 #include "../headers/Net/Socket.hpp"
 #undef SOCKET_IMPLEMENTATION
 
-
 #define DISCOVERY_SERVICE_IMPLEMENTATION
 #include "../headers/discovery_service.h"
 #undef DISCOVERY_SERVICE_IMPLEMENTATION
@@ -72,18 +71,17 @@ int server(int port)
       command_exec(participants);
     }
 
-    //participants.lock();
+    participants.lock();
     participants.print();
     MachineEndpoint discoveredMachine = {};
     if (discovery_service.endpoints.dequeue(discoveredMachine))
     {
       if (participants.map.find(discoveredMachine.hostname) == participants.map.end())
       {
-        participants.add(participant_t{discoveredMachine, true, nullptr });
+        participants.add(participant_t{discoveredMachine, true, std::make_shared<Socket>()});
       }
     }
-    //participants.unlock();
-    sleep((unsigned)(1/30.0f));
+    participants.unlock();
   }
   return 0;
 }
@@ -96,7 +94,9 @@ int client(int port)
   std::mutex mutex;
   DiscoveryService discovery_service{discovery_port};
   MonitoringService monitoring_service{monitoring_port};
-  printf("Participant\n");
+  NetworkInterfaceList network_interfaces = NetworkInterfaceList::begin();
+  std::cout << "MAC ADDRESS: " << MacAddress::get_mac().mac_str << "\nHOSTNAME: " << get_hostname() << "\n"
+            << network_interfaces->to_string() << std::endl;
   help_msg_client();
   discovery_service.start_client();
 
@@ -104,20 +104,17 @@ int client(int port)
   {
     if (key_hit())
     {
-      char buffer[MAXLINE];
-      if (fgets(buffer, MAXLINE, stdin) != NULL)
+      string cmd;
+      std::cin >> cmd;
+      if (cmd == "exit")
       {
-        std::string_view buffer_view = std::string_view(buffer, strlen(buffer));
-        if (buffer_view.rfind("exit"))
-        {
-          break;
-        }
+        break;
       }
     }
-    MachineEndpoint server{};
-    if (discovery_service.endpoints.dequeue(server) && !monitoring_service.running) {
-      std::cout << "Dyscovery: Endpoint" << server.to_string() << std::endl;
-      monitoring_service.start_client(server);
+    MachineEndpoint server_machine_endpoint;
+    if (!monitoring_service.running && discovery_service.endpoints.dequeue(server_machine_endpoint))
+    {
+      monitoring_service.start_client(server_machine_endpoint);
     }
   }
   return 0;

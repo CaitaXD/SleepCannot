@@ -130,10 +130,10 @@ int command_exec(ParticipantTable &participants)
     auto host_name = string(cmd_args).substr(0, cmd_args.find(" "));
     auto participant = participants.get(host_name);
     string magic_packet = "wakeup " + host_name;
-    IpEndPoint broadcast = IpEndPoint::broadcast(INITIAL_PORT + 2);
+    IpEndpoint broadcast = IpEndpoint::broadcast(INITIAL_PORT + 2);
     Socket s{};
-    s = s.open(AdressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
-    if (s.bind(IpEndPoint{INADDR_ANY, INITIAL_PORT + 2}) < 0)
+    s = s.open(AddressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
+    if (s.bind(IpEndpoint{INADDR_ANY, INITIAL_PORT + 2}) < 0)
     {
       perror("bind");
     }

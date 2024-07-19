@@ -11,11 +11,15 @@
 #include <netinet/if_ether.h>
 #include <netinet/in.h>
 #include <string.h>
+#include <list>
+#include <iterator>
+#include <sys/ioctl.h>
+#include <net/if.h>
 #include "./../macros.h"
 
 namespace Net
 {
-  enum AdressFamily
+  enum AddressFamily
   {
     InterNetwork = AF_INET,
     IPv6 = AF_INET6
@@ -23,8 +27,10 @@ namespace Net
 
   enum SocketType
   {
+    Raw = SOCK_RAW,
     Stream = SOCK_STREAM,
-    Datagram = SOCK_DGRAM
+    Datagram = SOCK_DGRAM,
+    NonBlocking = SOCK_NONBLOCK
   };
 
   enum SocketProtocol
@@ -34,7 +40,7 @@ namespace Net
     UDP = IPPROTO_UDP
   };
 
-  struct Adress
+  struct Address
   {
     union
     {
@@ -42,122 +48,340 @@ namespace Net
       uint8_t bytes[4];
     };
 
-    Adress(uint8_t a, uint8_t b, uint8_t c, uint8_t d);
-    Adress(const uint8_t adress[4]);
-    Adress(in_addr_t address);
+    Address(uint8_t a, uint8_t b, uint8_t c, uint8_t d);
+    Address(const uint8_t adress[4]);
+    Address(in_addr_t address);
 
-    static Adress parse(const string &ip);
+    static Address parse(const string &ip);
 
     in_addr_t host_order() const;
     in_addr_t network_order() const;
   };
 
-  struct IpEndPoint
+  struct IpEndpoint
   {
-    socklen_t addrlen;
+    socklen_t address_length;
+    sockaddr socket_address;
+
+    IpEndpoint();
+
+    IpEndpoint(uint32_t address, int port);
+    IpEndpoint(const string &ip, int port);
+    IpEndpoint(sockaddr socket_adress);
+    IpEndpoint(Address address, int port);
+    IpEndpoint with_port(int port) const;
+    IpEndpoint with_address(in_addr_t address) const;
+
+    bool operator==(const IpEndpoint &other) const;
+    static IpEndpoint broadcast(int port);
+    string to_string() const;
+  };
+
+  struct NetworkInterface
+  {
+  public:
+    NetworkInterface() = default;
+    NetworkInterface(const ifaddrs &addrs);
+
+    string_view interface_name;
+    unsigned int flags;
+
+    struct sockaddr *network_address;
+    struct sockaddr *network_mask;
     union
     {
-      struct sockaddr addr;
-      struct sockaddr_in addr_in;
-    };
+      struct sockaddr *broadcast_address;
+      struct sockaddr *destination_address;
+    } interface_union;
+    void *interface_data;
+#ifndef broadcast_address
+#define broadcast_address interface_union.broadcast_address
+#endif
+#ifndef destination_address
+#define destination_address interface_union.destination_address
+#endif
 
-    IpEndPoint();
+    string to_string() const
+    {
+      string msg;
+      msg += "NEWTWORK INTERFACE: " + string(interface_name) + "\n";
+      if (network_address)
+      {
+        char buffer[INET_ADDRSTRLEN];
+        msg += "ADDRESS: " + string(inet_ntop(AF_INET, &network_address, buffer, INET_ADDRSTRLEN)) + "\n";
+      }
+      if (network_mask)
+      {
+        char network_mask_str[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &network_mask, network_mask_str, INET_ADDRSTRLEN);
+        msg += "MASK: " + string(network_mask_str) + "\n";
+      }
 
-    IpEndPoint(uint32_t address, int port);
-    IpEndPoint(const string &ip, int port);
-    IpEndPoint(struct sockaddr_in addr_in);
-    IpEndPoint with_port(int port) const;
-    IpEndPoint with_address(in_addr_t address) const;
+      if (flags & IFF_UP)
+      {
+        msg += " UP ";
+      }
+      if (flags & IFF_BROADCAST)
+      {
+        msg += " BROADCAST ";
+      }
+      if (flags & IFF_DEBUG)
+      {
+        msg += " DEBUG ";
+      }
+      if (flags & IFF_LOOPBACK)
+      {
+        msg += " LOOPBACK ";
+      }
+      if (flags & IFF_POINTOPOINT)
+      {
+        msg += " POINTOPOINT ";
+      }
+      if (flags & IFF_NOTRAILERS)
+      {
+        msg += " NOTRAILERS ";
+      }
+      if (flags & IFF_RUNNING)
+      {
+        msg += " RUNNING ";
+      }
+      if (flags & IFF_NOARP)
+      {
+        msg += " NOARP ";
+      }
+      if (flags & IFF_PROMISC)
+      {
+        msg += " PROMISC ";
+      }
+      if (flags & IFF_ALLMULTI)
+      {
+        msg += " ALLMULTI ";
+      }
+      if (flags & IFF_MASTER)
+      {
+        msg += " MASTER ";
+      }
+      if (flags & IFF_SLAVE)
+      {
+        msg += " SLAVE ";
+      }
+      if (flags & IFF_MULTICAST)
+      {
+        msg += " MULTICAST ";
+      }
+      if (flags & IFF_PORTSEL)
+      {
+        msg += " PORTSEL ";
+      }
+      if (flags & IFF_AUTOMEDIA)
+      {
+        msg += " AUTOMEDIA ";
+      }
+      if (flags & IFF_DYNAMIC)
+      {
+        msg += " DYNAMIC ";
+      }
 
-    bool operator==(const IpEndPoint &other) const;
-    static IpEndPoint broadcast(int port);
-    string to_string() const;
+      if (flags & IFF_BROADCAST)
+      {
+        char broadcast_address_str[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &broadcast_address, broadcast_address_str, INET_ADDRSTRLEN);
+
+        msg += "Broadcast Address: " + string(broadcast_address_str) + "\n";
+      }
+      if (flags & IFF_POINTOPOINT)
+      {
+        char destination_address_str[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &destination_address, destination_address_str, INET_ADDRSTRLEN);
+        msg += "Destination Address: " + string(destination_address_str) + "\n";
+      }
+      return msg;
+    }
+  };
+
+  struct NetworkInterfaceList
+  {
+  public:
+    NetworkInterfaceList(ifaddrs *addrs) : _ifaddrs(addrs), free(false) {}
+    NetworkInterfaceList(ifaddrs &addrs) : _ifaddrs(std::addressof(addrs)), free(false) {}
+    NetworkInterfaceList(ifaddrs &&addrs) : _ifaddrs(std::addressof(addrs)), free(true) {}
+    ~NetworkInterfaceList()
+    {
+      if (free)
+      {
+        freeifaddrs(_ifaddrs);
+      }
+    }
+
+    NetworkInterfaceList &operator=(ifaddrs *pNode)
+    {
+      this->_ifaddrs = pNode;
+      return *this;
+    }
+    NetworkInterfaceList &operator++()
+    {
+      if (_ifaddrs)
+        _ifaddrs = _ifaddrs->ifa_next;
+      return *this;
+    }
+    NetworkInterfaceList operator++(int)
+    {
+      NetworkInterfaceList iterator = *this;
+      ++*this;
+      return iterator;
+    }
+    bool operator!=(const NetworkInterfaceList &iterator)
+    {
+      return _ifaddrs != iterator._ifaddrs;
+    }
+
+    const NetworkInterface &operator*()
+    {
+      _current = NetworkInterface(*_ifaddrs);
+      return _current;
+    }
+    const NetworkInterface *operator->()
+    {
+      _current = NetworkInterface(*_ifaddrs);
+      return &_current;
+    }
+
+    static NetworkInterfaceList begin()
+    {
+      return NetworkInterfaceList();
+    }
+
+    static NetworkInterfaceList end()
+    {
+      return NetworkInterfaceList(nullptr);
+    }
+
+  private:
+    ifaddrs *_ifaddrs;
+    NetworkInterface _current;
+    bool free;
+    NetworkInterfaceList() : _ifaddrs(nullptr), free(true)
+    {
+      if (getifaddrs(&_ifaddrs) == -1)
+      {
+        perror("getifaddrs");
+        return;
+      }
+    }
   };
 }
 #endif // NET_H_
 #ifdef NET_IMPLEMENTATION
-namespace InternetAdress
+namespace InternetAddress
 {
-  const Net::Adress Any = Net::Adress{htonl(INADDR_ANY)};
-  const Net::Adress Broadcast = Net::Adress{htonl(INADDR_BROADCAST)};
-  const Net::Adress Loopback = Net::Adress{htonl(INADDR_LOOPBACK)};
+  const Net::Address Any = Net::Address{htonl(INADDR_ANY)};
+  const Net::Address Broadcast = Net::Address{htonl(INADDR_BROADCAST)};
+  const Net::Address Loopback = Net::Address{htonl(INADDR_LOOPBACK)};
 };
 namespace Net
 {
-  Adress::Adress(uint8_t a, uint8_t b, uint8_t c, uint8_t d) : bytes{a, b, c, d} {}
-  Adress::Adress(const uint8_t host_order_adress[4]) { memmove(bytes, host_order_adress, 4); }
-  Adress::Adress(in_addr_t host_order_adress) : netwrok_order_address(htonl(host_order_adress)) {}
-  Adress Adress::parse(const string &ip)
+  Address::Address(uint8_t a, uint8_t b, uint8_t c, uint8_t d) : bytes{a, b, c, d} {}
+  Address::Address(const uint8_t host_order_adress[4]) { memmove(bytes, host_order_adress, 4); }
+  Address::Address(in_addr_t host_order_adress) : netwrok_order_address(htonl(host_order_adress)) {}
+  Address Address::parse(const string &ip)
   {
     auto addr = inet_addr(ip.c_str());
-    return Adress(addr);
+    return Address(addr);
   }
 
-  in_addr_t Adress::host_order() const { return ntohl(netwrok_order_address); }
-  in_addr_t Adress::network_order() const { return netwrok_order_address; }
+  in_addr_t Address::host_order() const { return ntohl(netwrok_order_address); }
+  in_addr_t Address::network_order() const { return netwrok_order_address; }
 
-  IpEndPoint::IpEndPoint()
+  IpEndpoint::IpEndpoint()
   {
-    addrlen = sizeof(struct sockaddr_in);
+    address_length = sizeof(sockaddr);
   }
 
-  IpEndPoint::IpEndPoint(uint32_t address, int port)
+  IpEndpoint::IpEndpoint(uint32_t address, int port)
   {
-    addrlen = sizeof(struct sockaddr_in);
-    addr_in.sin_family = AdressFamily::InterNetwork;
-    addr_in.sin_addr.s_addr = htonl(address);
-    addr_in.sin_port = htons(port);
+    bzero(this, sizeof(*this));
+    sockaddr_in *ipv4_socket_address = (sockaddr_in *)&socket_address;
+    address_length = sizeof(*ipv4_socket_address);
+    ipv4_socket_address->sin_family = AddressFamily::InterNetwork;
+    ipv4_socket_address->sin_addr.s_addr = htonl(address);
+    ipv4_socket_address->sin_port = htons(port);
   }
 
-  IpEndPoint::IpEndPoint(const string &ip, int port)
+  IpEndpoint::IpEndpoint(const string &ip, int port)
   {
-    addrlen = sizeof(struct sockaddr_in);
-    addr_in.sin_family = AdressFamily::InterNetwork;
-    addr_in.sin_addr.s_addr = inet_addr(ip.c_str());
-    addr_in.sin_port = htons(port);
+    bzero(this, sizeof(*this));
+    sockaddr_in *ipv4_socket_address = (sockaddr_in *)&socket_address;
+    address_length = sizeof(*ipv4_socket_address);
+    ipv4_socket_address->sin_family = AddressFamily::InterNetwork;
+    ipv4_socket_address->sin_addr.s_addr = inet_addr(ip.c_str());
+    ipv4_socket_address->sin_port = htons(port);
   }
 
-  IpEndPoint::IpEndPoint(struct sockaddr_in addr_in) : addrlen(sizeof(addr_in)), addr_in(addr_in) {}
+  IpEndpoint::IpEndpoint(sockaddr socket_adress) : address_length(sizeof(socket_adress)), socket_address(socket_adress) {}
 
-  IpEndPoint IpEndPoint::with_port(int port) const
+  IpEndpoint::IpEndpoint(Address address, int port)
   {
-    IpEndPoint ep = *this;
-    ep.addrlen = sizeof(ep.addr);
-    struct sockaddr_in *addr = (struct sockaddr_in *)&ep.addr;
-    addr->sin_port = htons(port);
+    bzero(this, sizeof(*this));
+    sockaddr_in *ipv4_socket_address = (sockaddr_in *)&socket_address;
+    address_length = sizeof(*ipv4_socket_address);
+    ipv4_socket_address->sin_family = AddressFamily::InterNetwork;
+    ipv4_socket_address->sin_addr.s_addr = address.network_order();
+    ipv4_socket_address->sin_port = htons(port);
+  }
+
+  IpEndpoint IpEndpoint::with_port(int port) const
+  {
+    IpEndpoint ep = *this;
+    struct sockaddr_in *ipv4_socket_adress = (struct sockaddr_in *)&ep.socket_address;
+    ep.address_length = sizeof(*ipv4_socket_adress);
+    ipv4_socket_adress->sin_port = htons(port);
     return ep;
   }
 
-  IpEndPoint IpEndPoint::with_address(in_addr_t address) const
+  IpEndpoint IpEndpoint::with_address(in_addr_t address) const
   {
-    IpEndPoint ep = *this;
-    ep.addrlen = sizeof(ep.addr);
-    struct sockaddr_in *addr = (struct sockaddr_in *)&ep.addr;
-    addr->sin_addr.s_addr = htonl(address);
+    IpEndpoint ep = *this;
+    struct sockaddr_in *ipv4_socket_adress = (struct sockaddr_in *)&ep.socket_address;
+    ep.address_length = sizeof(*ipv4_socket_adress);
+    ipv4_socket_adress->sin_addr.s_addr = htonl(address);
     return ep;
   }
 
-  bool IpEndPoint::operator==(const IpEndPoint &other) const
+  bool IpEndpoint::operator==(const IpEndpoint &other) const
   {
-    return addrlen == other.addrlen && memcmp(&addr, &other.addr, addrlen) == 0;
+    return address_length == other.address_length && memcmp(&socket_address, &other.socket_address, address_length) == 0;
   }
 
-  IpEndPoint IpEndPoint::broadcast(int port)
+  IpEndpoint IpEndpoint::broadcast(int port)
   {
-    return IpEndPoint(InternetAdress::Broadcast.network_order(), port);
+    return IpEndpoint(InternetAddress::Broadcast, port);
   }
 
-  string IpEndPoint::to_string() const
+  string IpEndpoint::to_string() const
   {
-    char buffer[INET_ADDRSTRLEN];
-    inet_ntop(addr.sa_family, &addr.sa_data, buffer, INET_ADDRSTRLEN);
-    return string(buffer);
+    sockaddr_in *ipv4_socket_address = (sockaddr_in *)&socket_address;
+    string ip = inet_ntoa(ipv4_socket_address->sin_addr);
+    string port = std::to_string(ipv4_socket_address->sin_port);
+    return ip + ":" + port;
+  }
+
+  NetworkInterface::NetworkInterface(const ifaddrs &addrs)
+  {
+    interface_name = addrs.ifa_name;
+    flags = addrs.ifa_flags;
+    network_address = addrs.ifa_addr;
+    network_mask = addrs.ifa_netmask;
+    broadcast_address = addrs.ifa_broadaddr;
+    destination_address = addrs.ifa_dstaddr;
+    interface_data = addrs.ifa_data;
   }
 }
 #endif // NET_IMPLEMENTATION
 
-using Adress = Net::Adress;
-using IpEndPoint = Net::IpEndPoint;
-using AdressFamily = Net::AdressFamily;
+using Address = Net::Address;
+using IpEndpoint = Net::IpEndpoint;
+using AddressFamily = Net::AddressFamily;
 using SocketType = Net::SocketType;
 using SocketProtocol = Net::SocketProtocol;
+using NetworkInterface = Net::NetworkInterface;
+using NetworkInterfaceList = Net::NetworkInterfaceList;
