@@ -22,19 +22,15 @@
 #include "Net/Net.hpp"
 #include "management.hpp"
 
-class MonitoringService
+struct MonitoringService
 {
-public:
   bool running;
-  const int port;
-
-private:
+  int port;
   pthread_t thread;
   IpEndpoint server_machine;
   ParticipantTable *participants;
+  Socket tcp_socket;
 
-public:
-  MonitoringService(int port) : running(false), port(port) {}
   ~MonitoringService()
   {
     stop();
@@ -59,11 +55,17 @@ void MonitoringService::start_server(ParticipantTable &participants)
   pthread_create(&thread, NULL, [](void *data) -> void *
                  {
     MonitoringService *ms = (MonitoringService *)data;
-    Socket server_socket{};
-    int result = server_socket.open(SocketType::Stream, SocketProtocol::TCP);
-    result |= server_socket.bind(ms->port); 
-    result |= server_socket.set_option(SO_REUSEADDR, 1);
-    result |= server_socket.listen();
+    timeval timeout = {
+        .tv_sec = 1,
+        .tv_usec = 0
+      };
+    int result = ms->tcp_socket.open(SocketType::Stream, SocketProtocol::TCP);
+    result |= ms->tcp_socket.set_option(SO_REUSEADDR, 1);
+    result |= ms->tcp_socket.set_option(SO_RCVTIMEO, &timeout);
+    result |= ms->tcp_socket.set_option(SO_SNDTIMEO, &timeout);
+    result |= ms->tcp_socket.set_option(SO_REUSEADDR, 1);
+    result |= ms->tcp_socket.bind(ms->port); 
+    result |= ms->tcp_socket.listen();
     if(result < 0)
     {
       perrorcode("start_server");
@@ -74,51 +76,92 @@ void MonitoringService::start_server(ParticipantTable &participants)
     while(ms->running)
     {   
       ms->participants->lock();
-      for (auto [host, participant] : ms->participants->map) {
+      
+      auto size = ms->participants->map.size();
+      if (size == 0) {
+        ms->participants->unlock();
+        continue;
+      }
+      
+      std::vector<FileDescriptor*> to_poll = std::vector<FileDescriptor*>(size);
+      time_t unix_epoch_now = time(NULL);
+      time_t time_before_wake = 5;
+      size_t to_poll_idx = 0;
+      for (auto &[host, participant] : ms->participants->map) {
+        if (participant.last_conection_timestamp + time_before_wake < unix_epoch_now) {
+          ms->participants->update_status(host, false);
+        }
+        else {
+          ms->participants->update_status(host, true);
+        }
         if (participant.socket->file_descriptor == -1) {
           IpEndpoint client_endpoint;
-          Socket client_socket = server_socket.accept(client_endpoint);
+          Socket client_socket = ms->tcp_socket.accept(client_endpoint);
+          if (client_socket.file_descriptor == -1) {
+            ms->participants->update_status(host, false);
+            continue;
+          }
           result |= client_socket.file_descriptor;
           *participant.socket = std::move(client_socket);
+          to_poll[to_poll_idx++] = participant.socket.get();
         }
         result = participant.socket->send("probe from server");
       }
-      msleep(1001);
-      std::vector<string> to_remove;
 
-      // int num_events;
-      // std::vector<Socket*> to_poll = std::vector<Socket*>(ms->participants->map.size());
-      // for (auto [host, participant] : ms->participants->map) {
-      //   to_poll.emplace_back(participant.socket.get());
-      // }
-      // std::vector<pollfd> poll_result = Socket::poll(to_poll, num_events, 5000);
-      // for (auto &poll : poll_result) {
-      //   if (poll.revents & POLLIN) {
-      //     Socket client_socket = Socket{poll.fd};
-      //     client_socket.keep_alive = true;
-      //     std::string cmd;
-      //     result = client_socket.recv(&cmd);
-      //     if (result <= 0) {
-      //       auto begin = ms->participants->map.begin();
-      //       auto end = ms->participants->map.end();
-      //       auto neeedle = std::find_if(begin, end, [&client_socket](const auto &pair) {
-      //         return pair.second.socket->file_descriptor == client_socket.file_descriptor;
-      //       });
-      //       if (neeedle != end) {
-      //         to_remove.push_back(neeedle->first);
-      //       }
-      //       perrorcode("recv");
-      //       continue;
-      //     }
-      //   }
-      // }
+      ms->participants->unlock();
+      msleep(100); // Let other threads get the GODDAMN MUTEX
+
+      std::vector<string> to_remove;
+      auto polls = FileDescriptor::poll(to_poll, POLLIN|POLLPRI|POLLOUT, 1000);
+      ms->participants->sync_root.lock();
+      
+      for (auto &poll : polls) {
+        int file_descriptor = poll.fd;
+        auto begin = ms->participants->map.begin();
+        auto end = ms->participants->map.end();
+        auto it = std::find_if(begin, end, [&file_descriptor](auto &p){ return p.second.socket->file_descriptor == file_descriptor; });
+        if (it == end) {
+          continue;
+        }
+
+        auto &[host, participant] = *it;
+        char buffer[1024];
+        int read = recv(file_descriptor, ARRAY_POSTFIXLEN(buffer), 0);
+        
+        result |= read;
+        if (errno == EPIPE) {
+          to_remove.push_back(host);
+          ms->participants->dirty = true;
+          continue;
+        }
+
+        if (result < 0) {
+          perrorcode("recv");
+          continue;
+        }
+
+        if (result == 0) {
+          continue;
+        }
+
+        if (string(buffer, read) == "exit") {
+          std::cout << "Client wants to exit" << std::endl;
+          to_remove.push_back(host);
+          ms->participants->dirty = true;
+          participant.socket->close();
+        }
+
+        participant.last_conection_timestamp = unix_epoch_now;
+        participant.socket->close();
+      }
 
       for (auto host : to_remove) {
         ms->participants->remove(host);
       }
+      
       ms->participants->unlock();
+      msleep(100); // Let other threads get the GODDAMN MUTEX
     }
-    std::cout << "Monitoring Service Stopped" << std::endl;
     ms->running = false;
     return NULL; }, this);
 }
@@ -134,31 +177,32 @@ void MonitoringService::start_client(const IpEndpoint &server_machine)
   pthread_create(&thread, NULL, [](void *data) -> void *
                  {
     MonitoringService *ms = (MonitoringService *)data;
-    int result = 0;
-    Socket client_socket{};
-    result = client_socket.open(SocketType::Stream, SocketProtocol::TCP);
+    Socket &client_socket = ms->tcp_socket;
+    int result = client_socket.open(SocketType::Stream, SocketProtocol::TCP);
     result |= client_socket.connect(ms->server_machine);
-    if (result < 0)
-    {
-      perror("connect");
-      return NULL;
-    }
-    std::string cmd;
     
+    std::string cmd;
     while (ms->running)
     {
+      if (result < 0)
+      {
+        perror("connect");
+        return NULL;
+      }
       result = client_socket.recv(&cmd);
       if (result == 0) {
+        client_socket.close();
+        result = client_socket.open(SocketType::Stream, SocketProtocol::TCP);
+        result |= client_socket.connect(ms->server_machine);
         continue;
       }
       else if (result < 0) {
         perrorcode("recv");
         continue;
       }
-      std::cout << "Received: " << cmd << " from " << ms->server_machine.to_string() << std::endl;
       if (cmd == "probe from server")
       {
-        msleep(1001);
+        msleep(1000);
         result |= client_socket.send("probe from client");
         if (result == 0){
           continue;
@@ -166,6 +210,10 @@ void MonitoringService::start_client(const IpEndpoint &server_machine)
         else if (result < 0) {
           perrorcode("recv");
         }
+      }
+      else if (cmd == "exit") {
+        ms->running = false;
+        return NULL;
       }
     }
     ms->running = false;

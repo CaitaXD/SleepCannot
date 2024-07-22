@@ -22,6 +22,10 @@
 #include "../headers/Net/Net.hpp"
 #undef NET_IMPLEMENTATION
 
+#define FILE_DESCRIPTOR_IMPLEMENTATION
+#include "../headers/FileDescriptor.hpp"
+#undef FILE_DESCRIPTOR_IMPLEMENTATION
+
 #define SOCKET_IMPLEMENTATION
 #include "../headers/Net/Socket.hpp"
 #undef SOCKET_IMPLEMENTATION
@@ -51,19 +55,38 @@ bool key_hit()
   return select(STDIN_FILENO + 1, &readfds, NULL, NULL, &tv) == 1;
 }
 
-int server(int port)
+DiscoveryService discovery_service;
+MonitoringService monitoring_service;
+bool is_server = false;
+
+void cleanup(int signum)
 {
-  int discovery_port = port;
-  int monitoring_port = port + 1;
+  (void)signum;
+  int errno_save = errno;
+  if (is_server)
+  {
+    monitoring_service.tcp_socket.close();
+    exit(EXIT_FAILURE);
+  }
+  else
+  {
+    monitoring_service.tcp_socket.send("exit");
+    signal(signum, SIG_DFL);
+    raise(SIGINT);
+  }
+  errno = errno_save;
+}
 
-  printf("Manager\n");
-  help_msg_server();
+#define CLEAR_SCREEN "\033[2J"
+int server()
+{
   ParticipantTable participants;
-  DiscoveryService discovery_service{discovery_port};
-  MonitoringService monitoring_service{monitoring_port};
-
   discovery_service.start_server();
   monitoring_service.start_server(participants);
+
+  help_msg_server();
+  participants.print();
+
   while (1)
   {
     if (key_hit())
@@ -72,28 +95,31 @@ int server(int port)
     }
 
     participants.lock();
-    participants.print();
-    MachineEndpoint discoveredMachine = {};
+
+    if (participants.dirty)
+    {
+      std::cout << CLEAR_SCREEN << "Manager\n";
+      help_msg_server();
+      participants.print();
+    }
+
+    MachineEndpoint discoveredMachine;
     if (discovery_service.endpoints.dequeue(discoveredMachine))
     {
-      if (participants.map.find(discoveredMachine.hostname) == participants.map.end())
-      {
-        participants.add(participant_t{discoveredMachine, true, std::make_shared<Socket>()});
-      }
+      participants.add(participant_t{
+          .machine = discoveredMachine,
+          .status = true,
+          .socket = std::make_shared<Socket>(),
+          .last_conection_timestamp = time(NULL)});
     }
+
     participants.unlock();
   }
   return 0;
 }
 
-int client(int port)
+int client()
 {
-  int discovery_port = port;
-  int monitoring_port = port + 1;
-
-  std::mutex mutex;
-  DiscoveryService discovery_service{discovery_port};
-  MonitoringService monitoring_service{monitoring_port};
   NetworkInterfaceList network_interfaces = NetworkInterfaceList::begin();
   std::cout << "MAC ADDRESS: " << MacAddress::get_mac().mac_str << "\nHOSTNAME: " << get_hostname() << "\n"
             << network_interfaces->to_string() << std::endl;
@@ -108,7 +134,8 @@ int client(int port)
       std::cin >> cmd;
       if (cmd == "exit")
       {
-        break;
+        monitoring_service.tcp_socket.send("exit");
+        exit(EXIT_SUCCESS);
       }
     }
     MachineEndpoint server_machine_endpoint;
@@ -127,20 +154,27 @@ int main(int argc, char **argv)
     printf("Usage: main <manager> if manager else <> for participant\n");
     return -1;
   }
-  bool is_server = argc > 1 && !strcmp(argv[1], "manager");
-  int port = INITIAL_PORT;
+  is_server = argc > 1 && !strcmp(argv[1], "manager");
+
+  struct sigaction sa;
+  sa.sa_handler = cleanup;
+  sa.sa_flags = SA_RESTART;
+  sigaction(SIGINT, &sa, NULL);
+
+  discovery_service.port = INITIAL_PORT + 50;
+  monitoring_service.port = INITIAL_PORT + 51;
 
   ssize_t exit_code;
   if (is_server)
   {
-    if ((exit_code = server(port)) != 0)
+    if ((exit_code = server()) != 0)
     {
       printf("Exit Code: %zi \n", exit_code);
     }
   }
   else
   {
-    if ((exit_code = client(port)) != 0)
+    if ((exit_code = client()) != 0)
     {
       printf("Exit Code: %zi \n", exit_code);
     }

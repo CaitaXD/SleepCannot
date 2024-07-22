@@ -134,6 +134,7 @@ typedef struct participant_t
     MachineEndpoint machine;
     bool status; // true means awake, false means asleep
     std::shared_ptr<Socket> socket;
+    time_t last_conection_timestamp;
 } participant_t;
 
 // Represents the table of users using the service
@@ -143,7 +144,6 @@ struct ParticipantTable
     bool dirty;
     std::mutex sync_root;
 
-public:
     ParticipantTable();
     ~ParticipantTable();
 
@@ -152,7 +152,7 @@ public:
     void print();
     void add(const participant_t &participant);
     void remove(const std::string &hostname);
-    void update(const std::string &hostname, bool status);
+    void update_status(const std::string &hostname, bool status);
 
     participant_t &get(const std::string &hostname);
 };
@@ -203,9 +203,13 @@ void wake_on_lan(int client_UdpSocket, participant_t participant)
         perror("wake_on_lan");
         return;
     }
+    else
+    {
+        std::cout << "Grab a brush and put a little makeup" << std::endl;
+    }
 }
 
-ParticipantTable::ParticipantTable() : dirty(false){};
+ParticipantTable::ParticipantTable() : map(), dirty(false), sync_root(){};
 ParticipantTable::~ParticipantTable()
 {
     unlock();
@@ -223,20 +227,21 @@ void ParticipantTable::unlock()
 
 void ParticipantTable::print()
 {
-    if (!dirty)
-    {
-        return;
-    }
-    std::cout << "\t\t\t\033[1mManagement Table\033[0m\t\t\t" << std::endl;
-    std::cout << "\033[1mhostname\tmac address\t\tip\t\tstatus\033[0m" << std::endl;
+    std::cout << "\t\t\t\033[1mManagement Table\033[0m\t\t\t\n";
+    std::cout << "\033[1mHost name\tMac address\t\tIp address\t\tstatus\t\tLast conection\033[0m\n";
     for (auto [host_name, participant] : map)
     {
         MachineEndpoint machine = participant.machine;
-        char format_name = machine.hostname.size() < 8 ? '\t' : 0;
-        std::cout << machine.to_string() << "\t" << format_name;
-        std::cout << (participant.status ? "awaken" : "ASLEEP");
-        std::cout << std::endl;
+        string status = participant.status ? "awake" : "sleeping";
+        struct tm *tm = localtime(&participant.last_conection_timestamp);
+        std::printf("%s\t%s\t%s\t\t%s\t\t%d/%d/%d %d:%d.%d\n",
+                    host_name.c_str(),
+                    machine.mac.mac_str,
+                    inet_ntoa(((sockaddr_in *)&machine.socket_address)->sin_addr),
+                    status.c_str(),
+                    tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec);
     }
+    std::cout << std::endl;
     dirty = false;
 }
 
@@ -257,14 +262,19 @@ void ParticipantTable::remove(const std::string &hostname)
     }
 }
 
-void ParticipantTable::update(const std::string &hostname, bool status)
+void ParticipantTable::update_status(const std::string &hostname, bool status)
 {
-    if (map.find(hostname) == map.end())
+    auto it = map.find(hostname);
+    if (it == map.end())
     {
         return;
     }
-    map[hostname].status = status;
-    dirty = true;
+    auto &[host, participant] = *it;
+    if (participant.status != status)
+    {
+        participant.status = status;
+        dirty = true;
+    }
 }
 
 participant_t &ParticipantTable::get(const std::string &hostname)

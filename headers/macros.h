@@ -20,7 +20,8 @@
 #define ARRAY_LENGTH(ARRAY) sizeof(ARRAY) / sizeof(ARRAY[0])
 #define ARRAY_LITERAL(type, ...) ((type[]){__VA_ARGS__})
 #define ARGS_LENGTH(type, ...) (sizeof((type[]){__VA_ARGS__}) / sizeof(type))
-#define UNPACK_ARRAY(ARRAY) ARRAY, ARRAY_LENGTH(ARRAY)
+#define ARRAY_POSTFIXLEN(ARRAY) ARRAY, ARRAY_LENGTH(ARRAY)
+#define ARRAY_PREFIXLEN(ARRAY) ARRAY_LENGTH(ARRAY), ARRAY
 
 #define SCOPE(VAR) for (VAR, *_once = NULL + 1; _once; _once = NULL)
 #define STATEMENT(...) \

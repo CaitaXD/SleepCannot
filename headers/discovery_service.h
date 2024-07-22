@@ -21,14 +21,12 @@ using string = std::string;
 using string_view = std::string_view;
 #define HOSTNAME_LEN 1024
 
-class DiscoveryService
+struct DiscoveryService
 {
     pthread_t thread;
     bool running;
     int port;
-
-public:
-    DiscoveryService(int port) : running(false), port(port) {}
+    Concurrent::LockFreeQueue<MachineEndpoint> endpoints = {};
     ~DiscoveryService()
     {
         stop();
@@ -36,7 +34,6 @@ public:
     void start_server();
     void start_client();
     void stop();
-    Concurrent::LockFreeQueue<MachineEndpoint> endpoints = {};
 };
 
 #ifdef DISCOVERY_SERVICE_IMPLEMENTATION
@@ -54,11 +51,12 @@ void DiscoveryService::start_server()
         DiscoveryService *ds = (DiscoveryService *)data;
         Socket server_socket{};
         server_socket.open(AddressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
-        int result = server_socket.bind(InternetAddress::Any, ds->port);
-        result |= server_socket.set_option(SO_BROADCAST, 1);
+        int result = server_socket.set_option(SO_BROADCAST, 1);
+        result |= server_socket.set_option(SO_REUSEADDR, 1);
+        result |= server_socket.bind(InternetAddress::Any, ds->port);
         if (result < 0)
         {
-            perror("set_option");
+            perror("discovery start_server");
             return NULL;
         }
         string buffer;
