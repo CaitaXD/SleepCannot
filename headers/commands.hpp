@@ -91,42 +91,6 @@ void *help_msg_client()
   return NULL;
 }
 
-inline void ltrim(string &s)
-{
-  s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch)
-                                  { return !std::isspace(ch); }));
-}
-
-inline void rtrim(string &s)
-{
-  s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch)
-                       { return !std::isspace(ch); })
-              .base(),
-          s.end());
-}
-
-inline void trim(string &s)
-{
-  rtrim(s);
-  ltrim(s);
-}
-
-
-char ascii_toupper(char c)
-{
-  return ('a' <= c && c <= 'z') ? c ^ 0x20 : c;
-}
-
-void ascii_toupper(string &src)
-{
-  size_t len = src.length();
-  for (size_t i = 0; i < len; ++i)
-  {
-    src[i] = ascii_toupper(src[i]);
-  }
-}
-
-
 int command_exec(Socket &udp_socket, ParticipantTable &participants)
 {
   int exit_code = 0;

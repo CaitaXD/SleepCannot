@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include <optional>
 #include "Net/Socket.hpp"
+#include "string_helpers.hpp"
 
 // Used to control read and write access to the management table
 typedef struct mutex_data_t
@@ -147,14 +148,14 @@ struct StringComparerIgnoreCase
 
 struct StringHashIgnoreCase
 {
+    std::hash<string> hash_function;
     std::size_t operator()(std::string str) const
     {
         for (std::size_t index = 0; index < str.size(); ++index)
         {
             auto ch = static_cast<unsigned char>(str[index]);
-            str[index] = static_cast<unsigned char>(std::tolower(ch));
+            str[index] = static_cast<unsigned char>(ascii_toupper(ch));
         }
-        std::hash<string> hash_function;
         return hash_function(str);
     }
 };
