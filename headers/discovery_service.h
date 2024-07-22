@@ -26,6 +26,7 @@ struct DiscoveryService
     pthread_t thread;
     bool running;
     int port;
+    Socket udp_socket;
     Concurrent::LockFreeQueue<MachineEndpoint> endpoints = {};
     ~DiscoveryService()
     {
@@ -49,7 +50,7 @@ void DiscoveryService::start_server()
     pthread_create(&thread, NULL, [](void *data) -> void *
                    {
         DiscoveryService *ds = (DiscoveryService *)data;
-        Socket server_socket{};
+        Socket &server_socket = ds->udp_socket;
         server_socket.open(AddressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
         int result = server_socket.set_option(SO_BROADCAST, 1);
         result |= server_socket.set_option(SO_REUSEADDR, 1);
@@ -62,7 +63,7 @@ void DiscoveryService::start_server()
         string buffer;
         while (ds->running)
         {
-            MachineEndpoint client_machine{};
+            MachineEndpoint client_machine;
             if (server_socket.recv(&buffer, client_machine, MSG_DONTWAIT) < 0)
             {
                 if (errno == EAGAIN)
@@ -129,7 +130,7 @@ void DiscoveryService::start_client()
         client_message.append(mac.mac_str, MAC_STR_MAX);
         
         DiscoveryService *ds = std::move((DiscoveryService *)data);
-        Socket client_socket;
+        Socket &client_socket = ds->udp_socket;
         IpEndpoint braodcast_ep = IpEndpoint::broadcast(ds->port);
         
         int result = client_socket.open(AddressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
@@ -138,7 +139,6 @@ void DiscoveryService::start_client()
 
         while (ds->running)
         {
-          
             if (client_socket.send(client_message, braodcast_ep) < 0)
             {
                 perror("send");
@@ -160,7 +160,10 @@ void DiscoveryService::start_client()
                 {
                     ds->endpoints.enqueue(server_endpoint);
                 }
-                return NULL;
+                //return NULL;
+            }
+            else if (msg.rfind("wakeup") == 0) {
+                std::cout << "Grab a brush and put a little makeup" << std::endl;
             }
         }
         ds->running = false;

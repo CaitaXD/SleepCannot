@@ -137,10 +137,32 @@ typedef struct participant_t
     time_t last_conection_timestamp;
 } participant_t;
 
+struct StringComparerIgnoreCase
+{
+    bool operator()(const std::string &lhs, const std::string &rhs) const
+    {
+        return strcasecmp(lhs.c_str(), rhs.c_str()) == 0;
+    }
+};
+
+struct StringHashIgnoreCase
+{
+    std::size_t operator()(std::string str) const
+    {
+        for (std::size_t index = 0; index < str.size(); ++index)
+        {
+            auto ch = static_cast<unsigned char>(str[index]);
+            str[index] = static_cast<unsigned char>(std::tolower(ch));
+        }
+        std::hash<string> hash_function;
+        return hash_function(str);
+    }
+};
+
 // Represents the table of users using the service
 struct ParticipantTable
 {
-    std::unordered_map<string, participant_t> map;
+    std::unordered_map<string, participant_t, StringHashIgnoreCase, StringComparerIgnoreCase> map;
     bool dirty;
     std::mutex sync_root;
 
@@ -180,32 +202,6 @@ void show_status(const std::unordered_map<string, participant_t> &table, mutex_d
             }
         }
         mutex_data.updated = false;
-    }
-}
-
-// wol function
-void wake_on_lan(int client_UdpSocket, participant_t participant)
-{
-    if (participant.machine.hostname == "None")
-    {
-        std::cout << "Participant not found" << std::endl;
-        return;
-    }
-    // if (p.status) {
-    //     std::cout << "Participant is already awake" << std::endl;
-    //     return;
-    // }
-    // send packet
-    std::string magic_packet = "wakeup " + participant.machine.hostname;
-    int r = send(client_UdpSocket, magic_packet.c_str(), magic_packet.size(), 0);
-    if (r < 0)
-    {
-        perror("wake_on_lan");
-        return;
-    }
-    else
-    {
-        std::cout << "Grab a brush and put a little makeup" << std::endl;
     }
 }
 

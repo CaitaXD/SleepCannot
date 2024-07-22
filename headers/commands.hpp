@@ -111,7 +111,23 @@ inline void trim(string &s)
   ltrim(s);
 }
 
-int command_exec(ParticipantTable &participants)
+
+char ascii_toupper(char c)
+{
+  return ('a' <= c && c <= 'z') ? c ^ 0x20 : c;
+}
+
+void ascii_toupper(string &src)
+{
+  size_t len = src.length();
+  for (size_t i = 0; i < len; ++i)
+  {
+    src[i] = ascii_toupper(src[i]);
+  }
+}
+
+
+int command_exec(Socket &udp_socket, ParticipantTable &participants)
 {
   int exit_code = 0;
   char buffer[MAXLINE];
@@ -119,6 +135,7 @@ int command_exec(ParticipantTable &participants)
   ssize_t read = strlen(buffer);
   string cmd = string(buffer).substr(0, read);
   trim(cmd);
+  ascii_toupper(cmd);
   enum CommandType cmd_type = get_command_type(cmd);
   participants.lock();
   switch (cmd_type)
@@ -128,23 +145,12 @@ int command_exec(ParticipantTable &participants)
     string cmd_args = string(cmd).substr(commands[cmd_type].cmd.size());
     trim(cmd_args);
     auto host_name = string(cmd_args).substr(0, cmd_args.find(" "));
-    auto participant = participants.get(host_name);
+    const auto &participant = participants.get(host_name);
     string magic_packet = "wakeup " + host_name;
-    IpEndpoint broadcast = IpEndpoint::broadcast(INITIAL_PORT + 2);
-    Socket s{};
-    s = s.open(AddressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
-    if (s.bind(IpEndpoint{INADDR_ANY, INITIAL_PORT + 2}) < 0)
-    {
-      perror("bind");
-    }
-    int r = s.send(magic_packet, broadcast, 0);
-    if (r < 0)
+    int result = udp_socket.send(magic_packet, participant.machine, 0);
+    if (result < 0)
     {
       perror("wake_on_lan");
-    }
-    else
-    {
-      std::cout << "[INFO] Sent magic packet to " << host_name << std::endl;
     }
     break;
   }

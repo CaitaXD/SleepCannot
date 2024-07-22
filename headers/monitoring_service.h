@@ -145,7 +145,6 @@ void MonitoringService::start_server(ParticipantTable &participants)
         }
 
         if (string(buffer, read) == "exit") {
-          std::cout << "Client wants to exit" << std::endl;
           to_remove.push_back(host);
           ms->participants->dirty = true;
           participant.socket->close();

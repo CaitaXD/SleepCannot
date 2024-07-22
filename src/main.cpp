@@ -91,7 +91,7 @@ int server()
   {
     if (key_hit())
     {
-      command_exec(participants);
+      command_exec(discovery_service.udp_socket, participants);
     }
 
     participants.lock();
