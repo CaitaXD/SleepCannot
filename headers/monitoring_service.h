@@ -107,13 +107,18 @@ void MonitoringService::start_server(ParticipantTable &participants)
           to_poll[to_poll_idx++] = participant.socket.get();
         }
         result = participant.socket->send("probe from server");
+        string cmd(1024, '\0');
+        int imediate_test = participant.socket->recv(&cmd, MSG_DONTWAIT);
+        if (errno == 0) { 
+          participant.last_conection_timestamp = unix_epoch_now;
+        }
       }
 
       ms->participants->unlock();
       msleep(300); // Let other threads get the GODDAMN MUTEX
 
       std::vector<string> to_remove;
-      auto polls = FileDescriptor::poll(to_poll, POLLIN|POLLPRI|POLLOUT, 1000);
+      auto polls = FileDescriptor::poll(to_poll, POLLIN, 1000);
       
       ms->participants->sync_root.lock();
       for (auto &poll : polls) {
