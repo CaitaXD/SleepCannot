@@ -131,6 +131,7 @@ void DiscoveryService::start_client()
         
         DiscoveryService *ds = std::move((DiscoveryService *)data);
         Socket &client_socket = ds->udp_socket;
+        client_socket.keep_alive = true;
         IpEndpoint braodcast_ep = IpEndpoint::broadcast(ds->port);
         
         int result = client_socket.open(AddressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
