@@ -74,6 +74,7 @@ void MonitoringService::start_server(ParticipantTable &participants)
     }
 
     std::string packet;
+    std::vector<FileDescriptor*> to_poll = std::vector<FileDescriptor*>();
     while(ms->running)
     {   
       ms->participants->lock();
@@ -84,7 +85,6 @@ void MonitoringService::start_server(ParticipantTable &participants)
         continue;
       }
       
-      std::vector<FileDescriptor*> to_poll = std::vector<FileDescriptor*>();
       time_t unix_epoch_now = time(NULL);
       time_t time_before_wake = 5;
       for (auto &[host, participant] : ms->participants->map) {
