@@ -160,7 +160,7 @@ void DiscoveryService::start_client()
                 {
                     ds->endpoints.enqueue(server_endpoint);
                 }
-                //return NULL;
+                return NULL;
             }
             else if (msg.rfind("wakeup") == 0) {
                 std::cout << "Grab a brush and put a little makeup" << std::endl;
