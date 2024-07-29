@@ -105,17 +105,6 @@ int command_exec(ParticipantTable &participants)
   {
   case COMMAND_WAKE_ON_LAN:
   {
-    Socket udp_awaker;
-    udp_awaker.open(AddressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
-    int result = udp_awaker.set_option(SO_BROADCAST, 1);
-    result |= udp_awaker.set_option(SO_REUSEADDR, 1);
-    result |= udp_awaker.bind(InternetAddress::Any, INITIAL_PORT + 2);
-    if (result < 0)
-    {
-      perrorcode("COMMAND_WAKE_ON_LAN");
-      break;
-    }
-
     string cmd_args = string(cmd).substr(commands[cmd_type].cmd.size());
     trim(cmd_args);
     auto host_name = string(cmd_args).substr(0, cmd_args.find(" "));
@@ -127,11 +116,9 @@ int command_exec(ParticipantTable &participants)
     }
     const auto &[host, participant] = *it;
     string magic_packet = "wakeonlan " + std::string(participant.machine.mac.mac_str);
-    std::cout << magic_packet << std::endl;
-    result = udp_awaker.send(magic_packet, participant.machine);
-    if (result < 0)
+    if (system(magic_packet.c_str()) < 0)
     {
-      perrorcode("send");
+      perrorcode("wakeonlan");
     }
     break;
   }
