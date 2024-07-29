@@ -54,6 +54,7 @@ void MonitoringService::start_server(ParticipantTable &participants)
   this->participants = std::addressof(participants);
   pthread_create(&thread, NULL, [](void *data) -> void *
                  {
+    StringEqComparerIgnoreCase string_equals;
     MonitoringService *ms = (MonitoringService *)data;
     timeval timeout = {
         .tv_sec = 1,
@@ -119,7 +120,9 @@ void MonitoringService::start_server(ParticipantTable &participants)
         int file_descriptor = poll.fd;
         auto begin = ms->participants->map.begin();
         auto end = ms->participants->map.end();
-        auto it = std::find_if(begin, end, [&file_descriptor](auto &p){ return p.second.socket->file_descriptor == file_descriptor; });
+        auto it = std::find_if(begin, end, [&file_descriptor](auto &p){ 
+          return p.second.socket->file_descriptor == file_descriptor;
+        });
         if (it == end) {
           continue;
         }
@@ -141,13 +144,13 @@ void MonitoringService::start_server(ParticipantTable &participants)
         }
 
         if (result == 0) {
+          std::cerr << "No Data avaliable to read" << std::endl;
           continue;
         }
 
-        if (string(buffer, read) == "exit") {
+        if (string_equals(string(buffer, read), "exit")) {
           to_remove.push_back(host);
           ms->participants->dirty = true;
-          participant.socket->close();
         }
 
         participant.last_conection_timestamp = unix_epoch_now;
