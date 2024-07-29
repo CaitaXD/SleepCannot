@@ -153,6 +153,7 @@ void MonitoringService::start_server(ParticipantTable &participants)
           ms->participants->dirty = true;
         }
 
+        std::cout << unix_epoch_now << std::endl;
         participant.last_conection_timestamp = unix_epoch_now;
         participant.socket->close();
       }
