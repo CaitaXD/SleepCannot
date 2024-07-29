@@ -84,10 +84,9 @@ void MonitoringService::start_server(ParticipantTable &participants)
         continue;
       }
       
-      std::vector<FileDescriptor*> to_poll = std::vector<FileDescriptor*>(size);
+      std::vector<FileDescriptor*> to_poll = std::vector<FileDescriptor*>();
       time_t unix_epoch_now = time(NULL);
       time_t time_before_wake = 5;
-      size_t to_poll_idx = 0;
       for (auto &[host, participant] : ms->participants->map) {
         if (participant.last_conection_timestamp + time_before_wake < unix_epoch_now) {
           ms->participants->update_status(host, false);
@@ -104,12 +103,12 @@ void MonitoringService::start_server(ParticipantTable &participants)
           }
           result |= client_socket.file_descriptor;
           *participant.socket = std::move(client_socket);
-          to_poll[to_poll_idx++] = participant.socket.get();
+          to_poll.push_back(participant.socket.get());
         }
         result = participant.socket->send("probe from server");
         string cmd(1024, '\0');
         int imediate_test = participant.socket->recv(&cmd, MSG_DONTWAIT);
-        if (errno == 0) { 
+        if (errno == 0 && imediate_test > 0) { 
           participant.last_conection_timestamp = unix_epoch_now;
         }
       }
@@ -118,6 +117,7 @@ void MonitoringService::start_server(ParticipantTable &participants)
       msleep(300); // Let other threads get the GODDAMN MUTEX
 
       std::vector<string> to_remove;
+
       auto polls = FileDescriptor::poll(to_poll, POLLIN, 1000);
       
       ms->participants->sync_root.lock();
@@ -158,9 +158,8 @@ void MonitoringService::start_server(ParticipantTable &participants)
           ms->participants->dirty = true;
         }
 
-        std::cout << unix_epoch_now << std::endl;
         participant.last_conection_timestamp = unix_epoch_now;
-        participant.socket->close();
+        //participant.socket->close();
       }
 
       for (auto host : to_remove) {
