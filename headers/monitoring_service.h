@@ -109,12 +109,12 @@ void MonitoringService::start_server(ParticipantTable &participants)
       }
 
       ms->participants->unlock();
-      msleep(100); // Let other threads get the GODDAMN MUTEX
+      msleep(300); // Let other threads get the GODDAMN MUTEX
 
       std::vector<string> to_remove;
       auto polls = FileDescriptor::poll(to_poll, POLLIN|POLLPRI|POLLOUT, 1000);
-      ms->participants->sync_root.lock();
       
+      ms->participants->sync_root.lock();
       for (auto &poll : polls) {
         int file_descriptor = poll.fd;
         auto begin = ms->participants->map.begin();
@@ -159,7 +159,7 @@ void MonitoringService::start_server(ParticipantTable &participants)
       }
       
       ms->participants->unlock();
-      msleep(100); // Let other threads get the GODDAMN MUTEX
+      msleep(300); // Let other threads get the GODDAMN MUTEX
     }
     ms->running = false;
     return NULL; }, this);

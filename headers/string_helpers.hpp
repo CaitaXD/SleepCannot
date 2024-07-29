@@ -34,3 +34,25 @@ static inline void ascii_toupper(std::string &src)
         src[i] = ascii_toupper(src[i]);
     }
 }
+
+struct StringEqComparerIgnoreCase
+{
+    bool operator()(const std::string &lhs, const std::string &rhs) const
+    {
+        return strcasecmp(lhs.c_str(), rhs.c_str()) == 0;
+    }
+};
+
+struct StringHashIgnoreCase
+{
+    std::hash<string> hash_function;
+    std::size_t operator()(std::string str) const
+    {
+        for (std::size_t index = 0; index < str.size(); ++index)
+        {
+            auto ch = static_cast<unsigned char>(str[index]);
+            str[index] = static_cast<unsigned char>(ascii_toupper(ch));
+        }
+        return hash_function(str);
+    }
+};

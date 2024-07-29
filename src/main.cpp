@@ -46,6 +46,8 @@
 #include "../headers/commands.hpp"
 #undef COMMANDS_IMPLEMENTATION
 
+StringEqComparerIgnoreCase string_equals;
+
 bool key_hit()
 {
   struct timeval tv = {0, 0};
@@ -89,13 +91,12 @@ int server()
 
   while (1)
   {
+    participants.lock();   
     if (key_hit())
     {
       command_exec(discovery_service.udp_socket, participants);
     }
-
-    participants.lock();
-
+    
     if (participants.dirty)
     {
       std::cout << CLEAR_SCREEN << "Manager\n";
@@ -114,6 +115,7 @@ int server()
     }
 
     participants.unlock();
+    msleep(300); // Let other threads get the GODDAMN MUTEX
   }
   return 0;
 }
@@ -132,7 +134,7 @@ int client()
     {
       string cmd;
       std::cin >> cmd;
-      if (cmd == "exit")
+      if (string_equals(cmd, "EXIT"))
       {
         monitoring_service.tcp_socket.send("exit");
         exit(EXIT_SUCCESS);
@@ -154,7 +156,7 @@ int main(int argc, char **argv)
     printf("Usage: main <manager> if manager else <> for participant\n");
     return -1;
   }
-  is_server = argc > 1 && !strcmp(argv[1], "manager");
+  is_server = argc > 1 && string_equals(argv[1], "manager");
 
   struct sigaction sa;
   sa.sa_handler = cleanup;

@@ -101,7 +101,6 @@ int command_exec(Socket &udp_socket, ParticipantTable &participants)
   trim(cmd);
   ascii_toupper(cmd);
   enum CommandType cmd_type = get_command_type(cmd);
-  participants.lock();
   switch (cmd_type)
   {
   case COMMAND_WAKE_ON_LAN:
@@ -109,8 +108,14 @@ int command_exec(Socket &udp_socket, ParticipantTable &participants)
     string cmd_args = string(cmd).substr(commands[cmd_type].cmd.size());
     trim(cmd_args);
     auto host_name = string(cmd_args).substr(0, cmd_args.find(" "));
-    const auto &participant = participants.get(host_name);
-    string magic_packet = "wakeup " + host_name;
+    auto it = participants.map.find(host_name);
+    if (it == participants.map.end())
+    {
+        std::cerr << "[ERROR] Invalid Hostname" << std::endl;
+        break;
+    }
+    const auto &[host, participant] = *it;
+    string magic_packet = "wakeonlan " + std::string(participant.machine.mac.mac_str);
     int result = udp_socket.send(magic_packet, participant.machine, 0);
     if (result < 0)
     {
@@ -123,7 +128,6 @@ int command_exec(Socket &udp_socket, ParticipantTable &participants)
     goto finally;
   }
 finally:
-  participants.unlock();
   return exit_code;
 }
 
