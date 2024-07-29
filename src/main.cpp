@@ -94,7 +94,7 @@ int server()
     participants.lock();   
     if (key_hit())
     {
-      command_exec(discovery_service.udp_socket, participants);
+      command_exec(participants);
     }
     
     if (participants.dirty)

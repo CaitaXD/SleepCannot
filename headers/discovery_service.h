@@ -51,7 +51,6 @@ void DiscoveryService::start_server()
                    {
         DiscoveryService *ds = (DiscoveryService *)data;
         Socket &server_socket = ds->udp_socket;
-        server_socket.keep_alive = true;
         server_socket.open(AddressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
         int result = server_socket.set_option(SO_BROADCAST, 1);
         result |= server_socket.set_option(SO_REUSEADDR, 1);

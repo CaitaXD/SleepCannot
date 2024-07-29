@@ -91,7 +91,7 @@ void *help_msg_client()
   return NULL;
 }
 
-int command_exec(Socket &udp_socket, ParticipantTable &participants)
+int command_exec(ParticipantTable &participants)
 {
   int exit_code = 0;
   char buffer[MAXLINE];
@@ -105,6 +105,17 @@ int command_exec(Socket &udp_socket, ParticipantTable &participants)
   {
   case COMMAND_WAKE_ON_LAN:
   {
+    Socket udp_awaker;
+    udp_awaker.open(AddressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
+    int result = udp_awaker.set_option(SO_BROADCAST, 1);
+    result |= udp_awaker.set_option(SO_REUSEADDR, 1);
+    result |= udp_awaker.bind(InternetAddress::Any, INITIAL_PORT + 2);
+    if (result < 0)
+    {
+      perrorcode("COMMAND_WAKE_ON_LAN");
+      break;
+    }
+
     string cmd_args = string(cmd).substr(commands[cmd_type].cmd.size());
     trim(cmd_args);
     auto host_name = string(cmd_args).substr(0, cmd_args.find(" "));
@@ -116,10 +127,11 @@ int command_exec(Socket &udp_socket, ParticipantTable &participants)
     }
     const auto &[host, participant] = *it;
     string magic_packet = "wakeonlan " + std::string(participant.machine.mac.mac_str);
-    int result = udp_socket.send(magic_packet, participant.machine, 0);
+    std::cout << magic_packet << std::endl;
+    result = udp_awaker.send(magic_packet, participant.machine);
     if (result < 0)
     {
-      perror("wake_on_lan");
+      perrorcode("send");
     }
     break;
   }
