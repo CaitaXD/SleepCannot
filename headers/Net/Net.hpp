@@ -1,3 +1,8 @@
+/*
+  Used for networking
+  Adpats the posix socket api to a more c++ like api
+*/
+
 #ifndef NET_H_
 #define NET_H_
 
@@ -58,6 +63,7 @@ namespace Net
     in_addr_t network_order() const;
   };
 
+  // Represents an internet address (only ipv4 for now)
   struct IpEndpoint
   {
     socklen_t address_length;
@@ -199,6 +205,7 @@ namespace Net
     }
   };
 
+  // Adapter for the ifaddrs linked list to a c++ iterator
   struct NetworkInterfaceList
   {
   public:

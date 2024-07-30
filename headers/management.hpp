@@ -1,3 +1,9 @@
+/*
+    Managent Table of participants
+    This service is used to manage the participants in the network
+    It uses a mutex to control access to the table and a boolean to let the UI know when to print the table
+*/
+
 #ifndef MANAGEMENT_H_
 #define MANAGEMENT_H_
 
@@ -12,16 +18,6 @@
 #include <optional>
 #include "Net/Socket.hpp"
 #include "string_helpers.hpp"
-
-// Used to control read and write access to the management table
-typedef struct mutex_data_t
-{
-    std::mutex mutex;
-    std::condition_variable cv;
-    bool updated; // might not be necessary
-    int update_count;
-    std::vector<int> read_count;
-} mutex_data_t;
 
 #define MAXLINE 1024
 #define INITIAL_PORT 35512
@@ -160,29 +156,6 @@ struct ParticipantTable
 
 #endif // MANAGEMENT_H_
 #ifdef MANAGEMENT_IMPLEMENTATION
-
-void show_status(const std::unordered_map<string, participant_t> &table, mutex_data_t &mutex_data, int &read_count)
-{
-    while (true)
-    {
-        std::unique_lock<std::mutex> lock(mutex_data.mutex);
-        mutex_data.cv.wait(lock, [&]
-                           { return read_count < mutex_data.update_count; });
-        read_count = mutex_data.update_count;
-        for (auto it = table.begin(); it != table.end(); ++it)
-        {
-            if (it->second.status)
-            {
-                std::cout << it->first << " is awake" << std::endl;
-            }
-            else
-            {
-                std::cout << it->first << " is asleep" << std::endl;
-            }
-        }
-        mutex_data.updated = false;
-    }
-}
 
 ParticipantTable::ParticipantTable() : map(), dirty(false), sync_root(){};
 ParticipantTable::~ParticipantTable()

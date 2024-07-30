@@ -1,3 +1,9 @@
+/*
+  This service is used to monitor the network for new participants
+  It TCP to exchange messages with the all the participants in the network
+  Once a participant connects it its file descriptor is added to the polling list
+  If a client doesnt respond for a while it is considered as sleeping if a client sends the exit command or exits via SIG_INT it gets removed from the table
+*/
 #ifndef MONITORING_SERVICE_H_
 #define MONITORING_SERVICE_H_
 
