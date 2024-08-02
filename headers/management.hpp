@@ -152,6 +152,8 @@ struct ParticipantTable
     void update_status(const std::string &hostname, bool status);
 
     participant_t &get(const std::string &hostname);
+
+    bool try_get_by_file_descriptor(int file_descriptor, std::string &hostname, participant_t *&participant);
 };
 
 #endif // MANAGEMENT_H_
@@ -228,6 +230,21 @@ void ParticipantTable::update_status(const std::string &hostname, bool status)
 participant_t &ParticipantTable::get(const std::string &hostname)
 {
     return map.at(hostname);
+}
+
+bool ParticipantTable::try_get_by_file_descriptor(int file_descriptor, std::string &hostname, participant_t *&participant)
+{
+    auto begin = map.begin();
+    auto end = map.end();
+    auto it = std::find_if(begin, end, [&file_descriptor](auto &p)
+                           { return p.second.socket->file_descriptor == file_descriptor; });
+    if (it == end)
+    {
+        return false;
+    }
+    participant = &it->second;
+    hostname = it->first;
+    return true;
 }
 
 #endif // MANAGEMENT_IMPLEMENTATION

@@ -24,6 +24,16 @@ static inline void perrorcode(const char *message)
   std::cerr << " errno: " << errno << std::endl;
 }
 
+static inline void perrorcode_info(const char *message, int line, const char *file)
+{
+  perror(message);
+  std::cerr << " errno: " << errno << std::endl;
+  std::cerr << " line: " << line << std::endl;
+  std::cerr << " file: " << file << std::endl;
+}
+
+#define PRINT_ERROR(msg) perrorcode_info(msg, __LINE__, __FILE__)
+
 static inline int msleep(long msec)
 {
   struct timespec ts;

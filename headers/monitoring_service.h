@@ -44,6 +44,9 @@ struct MonitoringService
   void start_server(ParticipantTable &participants);
   void start_client(const IpEndpoint &server_machine);
   void stop();
+
+private:
+  int prepare_conections(std::vector<FileDescriptor *> &conections, time_t timeout);
 };
 
 #endif // MONITORING_SERVICE_H_
@@ -75,48 +78,28 @@ void MonitoringService::start_server(ParticipantTable &participants)
     result |= ms->tcp_socket.listen();
     if(result < 0)
     {
-      perrorcode("start_server");
+      PRINT_ERROR("start_server");
       return NULL;
     }
 
     std::string packet;
-    std::vector<FileDescriptor*> to_poll = std::vector<FileDescriptor*>();
+    std::vector<FileDescriptor*> conections = std::vector<FileDescriptor*>();
     while(ms->running)
-    {   
+    { 
+      conections.clear();  
       ms->participants->lock();
-      
       auto size = ms->participants->map.size();
       if (size == 0) {
         ms->participants->unlock();
         continue;
       }
       
-      time_t unix_epoch_now = time(NULL);
-      time_t time_before_wake = 5;
-      for (auto &[host, participant] : ms->participants->map) {
-        if (participant.last_conection_timestamp + time_before_wake < unix_epoch_now) {
-          ms->participants->update_status(host, false);
-        }
-        else {
-          ms->participants->update_status(host, true);
-        }
-        if (participant.socket->file_descriptor == -1) {
-          IpEndpoint client_endpoint;
-          Socket client_socket = ms->tcp_socket.accept(client_endpoint);
-          if (client_socket.file_descriptor == -1) {
-            ms->participants->update_status(host, false);
-            continue;
-          }
-          result |= client_socket.file_descriptor;
-          *participant.socket = std::move(client_socket);
-          to_poll.push_back(participant.socket.get());
-        }
-        result = participant.socket->send("probe from server");
-        string cmd(1024, '\0');
-        int imediate_test = participant.socket->recv(&cmd, MSG_DONTWAIT);
-        if (errno == 0 && imediate_test > 0) { 
-          participant.last_conection_timestamp = unix_epoch_now;
-        }
+      result |= ms->prepare_conections(conections, 3);
+      if (result < 0) {
+        PRINT_ERROR("prepare_conections");
+        ms->participants->unlock();
+        result = 0;
+        continue;
       }
 
       ms->participants->unlock();
@@ -124,21 +107,16 @@ void MonitoringService::start_server(ParticipantTable &participants)
 
       std::vector<string> to_remove;
 
-      auto polls = FileDescriptor::poll(to_poll, POLLIN, 1000);
-      
+      auto polls = FileDescriptor::poll(conections, POLLIN|POLLHUP|POLLOUT, 1000);
       ms->participants->sync_root.lock();
       for (auto &poll : polls) {
         int file_descriptor = poll.fd;
-        auto begin = ms->participants->map.begin();
-        auto end = ms->participants->map.end();
-        auto it = std::find_if(begin, end, [&file_descriptor](auto &p){ 
-          return p.second.socket->file_descriptor == file_descriptor;
-        });
-        if (it == end) {
+        participant_t *participant;
+        string host;
+        if (!ms->participants->try_get_by_file_descriptor(file_descriptor, host, participant)) {
           continue;
         }
 
-        auto &[host, participant] = *it;
         char buffer[1024];
         int read = recv(file_descriptor, ARRAY_POSTFIXLEN(buffer), 0);
         
@@ -146,11 +124,13 @@ void MonitoringService::start_server(ParticipantTable &participants)
         if (errno == EPIPE) {
           to_remove.push_back(host);
           ms->participants->dirty = true;
+          result = 0;
           continue;
         }
-
         if (result < 0) {
-          perrorcode("recv");
+          PRINT_ERROR("recv");
+          result = 0;
+          close(file_descriptor);
           continue;
         }
 
@@ -160,12 +140,12 @@ void MonitoringService::start_server(ParticipantTable &participants)
         }
 
         if (string_equals(string(buffer, read), "exit")) {
+          participant->socket->close();
           to_remove.push_back(host);
           ms->participants->dirty = true;
         }
 
-        participant.last_conection_timestamp = unix_epoch_now;
-        //participant.socket->close();
+        participant->last_conection_timestamp = time(NULL);
       }
 
       for (auto host : to_remove) {
@@ -177,6 +157,45 @@ void MonitoringService::start_server(ParticipantTable &participants)
     }
     ms->running = false;
     return NULL; }, this);
+}
+
+int MonitoringService::prepare_conections(std::vector<FileDescriptor *> &connections, time_t timeout)
+{
+  int result = 0;
+  for (auto &[host, participant] : participants->map)
+  {
+    if ((participant.last_conection_timestamp + timeout) < time(NULL))
+    {
+      participants->update_status(host, false);
+    }
+    else
+    {
+      participants->update_status(host, true);
+    }
+    Socket *s = participant.socket.get();
+    if (s->file_descriptor == -1)
+    {
+      IpEndpoint client_endpoint;
+      *s = tcp_socket.accept(client_endpoint);
+      if (s->file_descriptor == -1)
+      {
+        participants->update_status(host, false);
+        close(s->file_descriptor);
+        s->file_descriptor = -1;
+        continue;
+      }
+      result |= s->file_descriptor;
+    }
+    connections.push_back(s);
+    result |= s->send("probe from server");
+    if (result < 0)
+    {
+      close(s->file_descriptor);
+      s->file_descriptor = -1;
+      return result;
+    }
+  }
+  return result;
 }
 
 void MonitoringService::start_client(const IpEndpoint &server_machine)
@@ -199,7 +218,7 @@ void MonitoringService::start_client(const IpEndpoint &server_machine)
     {
       if (result < 0)
       {
-        perror("connect");
+        PRINT_ERROR("connect");
         return NULL;
       }
       result = client_socket.recv(&cmd);
@@ -210,7 +229,7 @@ void MonitoringService::start_client(const IpEndpoint &server_machine)
         continue;
       }
       else if (result < 0) {
-        perrorcode("recv");
+        PRINT_ERROR("recv");
         continue;
       }
       if (cmd == "probe from server")
@@ -221,7 +240,7 @@ void MonitoringService::start_client(const IpEndpoint &server_machine)
           continue;
         }
         else if (result < 0) {
-          perrorcode("recv");
+          PRINT_ERROR("recv");
         }
       }
       else if (cmd == "exit") {
