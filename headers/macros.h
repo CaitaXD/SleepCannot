@@ -12,11 +12,15 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <variant>
 #include <ifaddrs.h>
 
 #define ARRAY_POSTFIXLEN(ARRAY) ARRAY, ARRAY_LENGTH(ARRAY)
 #define ARRAY_PREFIXLEN(ARRAY) ARRAY_LENGTH(ARRAY), ARRAY
 #define ARRAY_LENGTH(ARRAY) sizeof(ARRAY) / sizeof(ARRAY[0])
+
+#define ON_SUCCESS(RESULT, NEXT) RESULT = RESULT < 0 ? RESULT : NEXT
+#define ON_FAILURE(RESULT, NEXT) RESULT = RESULT < 0 ? RESULT : NEXT
 
 static inline void perrorcode(const char *message)
 {

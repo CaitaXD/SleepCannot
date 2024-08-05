@@ -99,25 +99,54 @@ struct MachineEndpoint : IpEndpoint
 
     int get_port() const
     {
-        return ntohs(((struct sockaddr_in *)&socket_address)->sin_port);
+        if (socket_address.sa_family == AddressFamily::InterNetwork)
+        {
+            struct sockaddr_in *ipv4_socket_address = (sockaddr_in *)&socket_address;
+            return ntohs(ipv4_socket_address->sin_port);
+        }
+        else if (socket_address.sa_family == AddressFamily::IPv6)
+        {
+            struct sockaddr_in6 *ipv6_socket_address = (sockaddr_in6 *)&socket_address;
+            return ntohs(ipv6_socket_address->sin6_port);
+        }
+        else
+        {
+            return -1;
+        }
     }
 
     string to_string() const
     {
-        auto ip = inet_ntoa(((struct sockaddr_in *)&socket_address)->sin_addr);
-        auto port = ntohs(((struct sockaddr_in *)&socket_address)->sin_port);
-        return hostname + " " + mac.mac_str + " " + string(ip) + ":" + std::to_string(port);
+        if (socket_address.sa_family == AddressFamily::InterNetwork)
+        {
+            struct sockaddr_in *ipv4_socket_address = (sockaddr_in *)&socket_address;
+            auto ip = inet_ntoa(ipv4_socket_address->sin_addr);
+            auto port = ntohs(ipv4_socket_address->sin_port);
+            return hostname + " " + mac.mac_str + " " + string(ip) + ":" + std::to_string(port);
+        }
+        else if (socket_address.sa_family == AddressFamily::IPv6)
+        {
+            struct sockaddr_in6 *ipv6_socket_address = (sockaddr_in6 *)&socket_address;
+            char buffer[INET6_ADDRSTRLEN];
+            auto ip = inet_ntop(AF_INET6, &ipv6_socket_address->sin6_addr, buffer, INET6_ADDRSTRLEN);
+            auto port = ntohs(ipv6_socket_address->sin6_port);
+            return hostname + " " + mac.mac_str + " " + string(ip) + ":" + std::to_string(port);
+        }
+        else
+        {
+            return "Unsupported address family";
+        }
     }
 
-    static MachineEndpoint MyMachine(Address address, int port)
+    static MachineEndpoint MyMachine(in_addr_t address, int port)
     {
         MachineEndpoint ep;
         sockaddr_in *ipv4_socket_address = (sockaddr_in *)&ep.socket_address;
         bzero(ipv4_socket_address, sizeof(*ipv4_socket_address));
 
-        ep.address_length = sizeof(struct sockaddr_in);
+        ep.address_length = sizeof(sockaddr_in);
         ipv4_socket_address->sin_family = AddressFamily::InterNetwork;
-        ipv4_socket_address->sin_addr.s_addr = address.network_order();
+        ipv4_socket_address->sin_addr.s_addr = htonl(address);
         ipv4_socket_address->sin_port = htons(port);
         ep.mac = MacAddress::get_mac();
         ep.hostname = get_hostname();
@@ -159,7 +188,7 @@ struct ParticipantTable
 #endif // MANAGEMENT_H_
 #ifdef MANAGEMENT_IMPLEMENTATION
 
-ParticipantTable::ParticipantTable() : map(), dirty(false), sync_root(){};
+ParticipantTable::ParticipantTable() : map(), dirty(false), sync_root() {};
 ParticipantTable::~ParticipantTable()
 {
     unlock();

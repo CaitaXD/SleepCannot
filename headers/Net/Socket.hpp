@@ -39,9 +39,9 @@ public:
   int close();
   int bind(int port);
   int bind(const IpEndpoint &ep);
-  int bind(Address address, int port);
   int bind(string address, int port);
   int listen(int backlog = 5);
+  bool pending();
   Socket accept(IpEndpoint &ep);
 
   constexpr Socket &operator=(Socket &&other);
@@ -138,16 +138,7 @@ int Socket::bind(int port)
 {
   struct sockaddr_in server_addr = {};
   server_addr.sin_family = AddressFamily::InterNetwork;
-  server_addr.sin_addr.s_addr = InternetAddress::Any.network_order();
-  server_addr.sin_port = htons(port);
-  return ::bind(file_descriptor, (struct sockaddr *)&server_addr, sizeof(server_addr));
-}
-
-int Socket::bind(Address address, int port)
-{
-  struct sockaddr_in server_addr = {};
-  server_addr.sin_family = AddressFamily::InterNetwork;
-  server_addr.sin_addr.s_addr = address.network_order();
+  server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
   server_addr.sin_port = htons(port);
   return ::bind(file_descriptor, (struct sockaddr *)&server_addr, sizeof(server_addr));
 }
@@ -184,7 +175,7 @@ Socket Socket::accept(IpEndpoint &ep)
 
 int Socket::recv(string *payload, IpEndpoint &ep, int flags)
 {
-  char buffer[1024]{};
+  char buffer[1024];
   int bytes_received = ::recvfrom(file_descriptor, buffer, 1024, flags, &ep.socket_address, &ep.address_length);
   if (bytes_received < 0)
   {
@@ -202,6 +193,11 @@ int Socket::send(const string &payload, const IpEndpoint &ep, int flags)
 int Socket::connect(const IpEndpoint &ep)
 {
   return ::connect(file_descriptor, (struct sockaddr *)&ep.socket_address, ep.address_length);
+}
+
+bool Socket::pending()
+{
+  return poll(POLLIN, 0);
 }
 
 #endif // SOCKET_IMPLEMENTATION

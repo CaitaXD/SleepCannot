@@ -63,7 +63,7 @@ void DiscoveryService::start_server()
         server_socket.open(AddressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
         int result = server_socket.set_option(SO_BROADCAST, 1);
         result |= server_socket.set_option(SO_REUSEADDR, 1);
-        result |= server_socket.bind(InternetAddress::Any, ds->port);
+        result |= server_socket.bind(IpEndpoint::ipv4_any(ds->port));
         if (result < 0)
         {
             perror("discovery start_server");
@@ -140,10 +140,10 @@ void DiscoveryService::start_client()
         
         DiscoveryService *ds = std::move((DiscoveryService *)data);
         Socket &client_socket = ds->udp_socket;
-        IpEndpoint braodcast_ep = IpEndpoint::broadcast(ds->port);
+        IpEndpoint braodcast_ep = IpEndpoint::ipv4_broadcast(ds->port);
         
         int result = client_socket.open(AddressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
-        result |= client_socket.bind(InternetAddress::Any, ds->port);
+        result |= client_socket.bind(IpEndpoint::ipv4_any(ds->port));
         result |= client_socket.set_option(SO_BROADCAST, 1);
 
         while (ds->running)

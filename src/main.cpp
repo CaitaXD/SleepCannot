@@ -18,6 +18,10 @@
 #include <signal.h>
 #include <unistd.h>
 
+#define NETWORK_INTERFACE_IMPLEMENTATION
+#include "../headers/Net/NetworkInterface.hpp"
+#undef NETWORK_INTERFACE_IMPLEMENTATION
+
 #define NET_IMPLEMENTATION
 #include "../headers/Net/Net.hpp"
 #undef NET_IMPLEMENTATION
@@ -94,12 +98,12 @@ int server()
 
   while (1)
   {
-    participants.lock();   
+    participants.lock();
     if (key_hit())
     {
       command_exec(participants);
     }
-    
+
     if (participants.dirty)
     {
       std::cout << CLEAR_SCREEN << "Manager\n";

@@ -18,7 +18,7 @@ struct FileDescriptor
   int file_descriptor;
   bool keep_alive;
 
-  pollfd poll(int poll_events, int timeout);
+  bool poll(int poll_events, int timeout);
   static std::vector<pollfd> poll(std::vector<FileDescriptor *> &sockets, int poll_flag, int timeout);
 
   constexpr FileDescriptor &operator=(FileDescriptor &&other);
@@ -46,13 +46,13 @@ FileDescriptor::~FileDescriptor()
   }
 }
 
-pollfd FileDescriptor::poll(int events, int timeout)
+bool FileDescriptor::poll(int events, int timeout)
 {
   pollfd fd;
   fd.fd = file_descriptor;
   fd.events = events;
   ::poll(&fd, 1, timeout);
-  return fd;
+  return fd.revents & events;
 }
 
 std::vector<pollfd> FileDescriptor::poll(std::vector<FileDescriptor *> &file_descriptors, int poll_events, int timeout)
