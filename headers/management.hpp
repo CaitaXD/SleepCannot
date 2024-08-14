@@ -132,6 +132,8 @@ typedef struct participant_t
     bool status; // true means awake, false means asleep
     std::shared_ptr<Socket> socket;
     time_t last_conection_timestamp;
+    int id; // used in election
+    bool is_manager;
 } participant_t;
 
 // Represents the table of users using the service

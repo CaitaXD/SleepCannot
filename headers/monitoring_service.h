@@ -104,7 +104,7 @@ void MonitoringService::start_server(ParticipantTable &participants)
           IpEndpoint client_endpoint;
           Socket client_socket = ms->tcp_socket.accept(client_endpoint);
           if (client_socket.file_descriptor == -1) {
-            ms->participants->update_status(host, false);
+            ms->participants->update_status(host, false); // maybe this is giving false negatives
             continue;
           }
           result |= client_socket.file_descriptor;
