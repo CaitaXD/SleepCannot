@@ -41,11 +41,12 @@ struct Message {
 class Node {
     participant_t info; // info about this node
     ParticipantTable participants; // every node keeps a copy of the participants table
+    int manager_id = -1; // id of the manager node
     bool has_started_election = false;
     std::mutex msg_mutex; // only one thread can access messages at a time
     std::vector<Message> messages; // messages received by this node
 
-    Node(int id, bool is_manager);
+    Node(int id, int manager_id);
     ~Node();
     void start_node(); // this function should connect node to all other nodes
     void end_node();
@@ -84,25 +85,25 @@ void Node::listen() {
 }
 
 void Node::send_coordinator() {
-    participants.lock();
+    this->participants.lock();
     // send coordinator message to all participants
     for (auto &[host, participant] : participants.map) {
         participant.socket->send("c," + std::to_string(this->info.id));
     }
-    participants.unlock();
+    this->participants.unlock();
 }
 
 void Node::send_election() {
     if (this->has_started_election) return; // only one election message per node TODO: no busy waiting
     this->has_started_election = true;
     // send election message to participants with higher id
-    participants.lock();
+    this->participants.lock();
     for (auto &[host, participant] : participants.map) {
         if (this->info.id < participant.is_manager) {
             participant.socket->send("e," + std::to_string(this->info.id));
         }
     }
-    participants.unlock();
+    this->participants.unlock();
 }
 
 // run in thread (maybe on listen)
@@ -112,21 +113,27 @@ void Node::answer_election() {
         this->msg_mutex.unlock();
         return;
     }
-    for (auto msg : this->messages) {
+    for (auto it = this->messages.begin(); it != this->messages.end(); ++it) {
+        auto &msg = *it;
         if (msg.msg == 'e') {
             int dest_id = msg.id;
             if (this->info.id < dest_id) {
+                this->participants.lock();
                 for (auto &[host, participant] : participants.map) {
                     if (participant.id == dest_id) {
                         participant.socket->send("a," + std::to_string(this->info.id));
                         if (!this->has_started_election) this->run_election();
-                        break;
+                        this->messages.erase(it);
+                        this->participants.unlock();
+                        this->participants.unlock();
+                        return;
                     }
                 }
+                this->participants.unlock();
             }
         }
     }
-    this->msg_mutex.unlock();
+    this->participants.unlock();
 }
 
 // run in thread (maybe on listen)
@@ -136,9 +143,11 @@ int Node::check_coordinator() {
         this->msg_mutex.unlock();
         return false;
     }
-    for (auto msg: this->messages) {
+    for (auto it = this->messages.begin(); it != this->messages.end(); ++it) {
+        auto &msg = *it;
         if (msg.msg == 'c') {
             this->msg_mutex.unlock();
+            this->messages.erase(it);
             return msg.id;
         }
     }
@@ -152,10 +161,12 @@ bool Node::check_reply_from_election() {
         this->msg_mutex.unlock();
         return false;
     }
-    for (auto msg: this->messages) {
+    for (auto it = this->messages.begin(); it != this->messages.end(); ++it) {
+        auto &msg = *it;
         if (msg.msg == 'a') {
             if (this->info.id < msg.id) {
                 this->msg_mutex.unlock();
+                this->messages.erase(it);
                 return true;
             }
         }
@@ -169,6 +180,7 @@ void Node::run_election() {
     // if (!this->should_run_election()) return;
     // sends coordinator message if it has the highest id
     bool highest_id = true;
+    this->participants.lock();
     for (auto &[host, participant] : participants.map) {
         if (!participant.status) continue;
         if (this->info.id < participant.id) {
@@ -176,8 +188,10 @@ void Node::run_election() {
             break;
         }
     }
+    this->participants.unlock();
     if (highest_id) {
         this->send_coordinator();
+        this->has_started_election = false;
         return;
     }
     // else, send election message to all participants with higher id
@@ -186,15 +200,21 @@ void Node::run_election() {
     msleep(TIMEOUT_ELECTION);
     if (this->check_reply_from_election()) {
         msleep(TIMEOUT_COORDINATOR); // waits for coordinator message, if timeout, starts election
-        if (this->check_coordinator() == -1) {
+        int coordinator_id = this->check_coordinator();
+        if (coordinator_id == -1) {
             this->has_started_election = false;
             this->run_election();
+        }
+        else {
+            this->has_started_election = false;
+            this->manager_id = coordinator_id;
+            return;
         }
     }
     // if no answer, send coordinator message
     this->send_coordinator();
-    msleep(TIMEOUT_COORDINATOR); // waits for everyone to receive coordinator message
     this->has_started_election = false;
+    return;
 }
 
 #endif // NODE_IMPLEMENTATION
