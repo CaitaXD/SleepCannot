@@ -61,8 +61,6 @@ void Election::send_coordinator(Node& node) {
 
 // Send election message to participants with higher id
 void Election::send_election(Node& node) {
-    if (node.has_started_election) return; // only one election message per node
-    node.has_started_election = true;
     node.participants.lock();
     for (auto &[host, participant] : node.participants.map) {
         if (node.info.id < participant.id) {
@@ -91,6 +89,9 @@ void Election::answer_election(Node& node, int sender_id) {
 // run in thread
 // Starts election process
 void Election::run_election(Node& node) {
+    restart_election:
+    if (node.has_started_election) return;
+    node.has_started_election = true;
     // Sends coordinator message if it has the highest id
     bool highest_id = true;
     node.participants.lock();
@@ -104,6 +105,7 @@ void Election::run_election(Node& node) {
     node.participants.unlock();
     if (highest_id) {
         Election::send_coordinator(node);
+        node.manager_id = node.info.id;
         node.has_started_election = false;
         return;
     }
@@ -112,20 +114,22 @@ void Election::run_election(Node& node) {
     // Wait for answers
     msleep(TIMEOUT_ELECTION);
     if (Election::check_reply_from_election(node)) {
-        msleep(TIMEOUT_COORDINATOR); // waits for coordinator message, if timeout, starts election
+        msleep(TIMEOUT_COORDINATOR); // waits for coordinator message, if timeout, starts new election
         int coordinator_id = Election::check_coordinator(node);
         if (coordinator_id == -1) {
             node.has_started_election = false;
-            Election::run_election(node);
+            goto restart_election;
+            //Election::run_election(node); // might break the universe
         }
         else {
             node.has_started_election = false;
             node.manager_id = coordinator_id; // updates new coordinator
-            return;
         }
+        return;
     }
     // If no answer, send coordinator message
     Election::send_coordinator(node);
+    node.manager_id = node.info.id;
     node.has_started_election = false;
 }
 
