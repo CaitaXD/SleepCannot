@@ -18,10 +18,12 @@
 #define ARRAY_PREFIXLEN(ARRAY) ARRAY_LENGTH(ARRAY), ARRAY
 #define ARRAY_LENGTH(ARRAY) sizeof(ARRAY) / sizeof(ARRAY[0])
 
-static inline void perrorcode(const char *message)
+#define perrorcode(message) perrorcode_(message, __FILE__, __LINE__)
+
+static inline void perrorcode_(const char *message, const char *file, int line)
 {
   perror(message);
-  std::cerr << " errno: " << errno << std::endl;
+  std::cerr << "errno: " << errno << " in " << file << ":" << line << std::endl;
 }
 
 static inline int msleep(long msec)

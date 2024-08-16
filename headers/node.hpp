@@ -35,6 +35,8 @@ class Node {
         void start_node(); // this function should connect node to all other nodes
         void end_node();
         void listen(); // listen for messages, updating message vector  
+        bool is_manager();
+        bool my_self(participant_t &participant);
 };
 
 #endif // NODE_H_
@@ -43,7 +45,8 @@ class Node {
 #define NODE_IMPLEMENTATION
 
 Node::Node(int id, int manager_id) {
-
+    info.id = id;
+    this->manager_id = manager_id;
 }
 
 Node::~Node() {
@@ -73,6 +76,14 @@ void Node::listen() {
         this->msg_mutex.unlock();
         msleep(300); // let other threads get the GODDAMN mutex
     }
+}
+
+bool Node::is_manager() {
+    return this->manager_id == this->info.id;
+}   
+
+bool Node::my_self(participant_t &participant) {
+    return participant.id == this->info.id;
 }
 
 #endif // NODE_IMPLEMENTATION

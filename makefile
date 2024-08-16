@@ -54,7 +54,26 @@ dockerrestart:
 
 docker: clean all dockerclean dockerbuild dockerrun
 
-	
+test: 
+	g++ --debug src/test.cpp -lpthread -o bin/test
+
+testclean:
+	rm -rf bin/test
+
+testdockerclean:
+	docker kill test_server
+	docker kill test_client
+	docker rm test_server
+	docker rm test_client
+	docker image rm test_client
+	docker image rm test_server
+
+testdocker:
+	docker build -t test_client -f test_client.dockerfile .
+	docker build -t test_server -f test_server.dockerfile .
+	docker run -d --name test_server --network bridge -t test_server
+	docker run -d --name test_client --network bridge -t test_client
+
 $(TARGET): $(OBJECTS)
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS)

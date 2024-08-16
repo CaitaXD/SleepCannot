@@ -154,6 +154,8 @@ struct ParticipantTable
     void update_status(const std::string &hostname, bool status);
 
     participant_t &get(const std::string &hostname);
+
+    std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_socket(const Socket &socket);
 };
 
 #endif // MANAGEMENT_H_
@@ -197,7 +199,8 @@ void ParticipantTable::print()
 
 void ParticipantTable::add(const participant_t &participant)
 {
-    auto [_, success] = map.emplace(participant.machine.hostname, participant);
+    string machine_hostname = participant.machine.hostname + ":" + std::to_string(participant.id);
+    auto [_, success] = map.emplace(machine_hostname, participant);
     if (success)
     {
         dirty = true;
@@ -230,6 +233,18 @@ void ParticipantTable::update_status(const std::string &hostname, bool status)
 participant_t &ParticipantTable::get(const std::string &hostname)
 {
     return map.at(hostname);
+}
+
+std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> ParticipantTable::find_by_socket(const Socket &socket)
+{
+    for (auto &[host, participant] : map)
+    {
+        if (participant.socket->file_descriptor == socket.file_descriptor)
+        {
+            return std::make_pair(host, std::reference_wrapper<participant_t>(map.at(host)));
+        }
+    }
+    return std::nullopt;
 }
 
 #endif // MANAGEMENT_IMPLEMENTATION

@@ -69,12 +69,12 @@ void cleanup(int signum)
   int errno_save = errno;
   if (is_server)
   {
-    monitoring_service.tcp_socket.close();
+    //monitoring_service.tcp_socket.close();
     exit(EXIT_FAILURE);
   }
   else
   {
-    monitoring_service.tcp_socket.send("exit");
+    //monitoring_service.tcp_socket.send("exit");
     signal(signum, SIG_DFL);
     raise(SIGINT);
   }
@@ -82,76 +82,6 @@ void cleanup(int signum)
 }
 
 #define CLEAR_SCREEN "\033[2J" // ascii escape code to clear the screen
-// Server side of the program
-int server()
-{
-  ParticipantTable participants;
-  discovery_service.start_server();
-  monitoring_service.start_server(participants);
-
-  help_msg_server();
-  participants.print();
-
-  while (1)
-  {
-    participants.lock();   
-    if (key_hit())
-    {
-      command_exec(participants);
-    }
-    
-    if (participants.dirty)
-    {
-      std::cout << CLEAR_SCREEN << "Manager\n";
-      help_msg_server();
-      participants.print();
-    }
-
-    MachineEndpoint discoveredMachine;
-    if (discovery_service.endpoints.dequeue(discoveredMachine))
-    {
-      participants.add(participant_t{
-          .machine = discoveredMachine,
-          .status = true,
-          .socket = std::make_shared<Socket>(),
-          .last_conection_timestamp = time(NULL)});
-    }
-
-    participants.unlock();
-    msleep(300); // Let other threads get the GODDAMN MUTEX
-  }
-  return 0;
-}
-
-// Client side of the program
-int client()
-{
-  NetworkInterfaceList network_interfaces = NetworkInterfaceList::begin();
-  std::cout << "MAC ADDRESS: " << MacAddress::get_mac().mac_str << "\nHOSTNAME: " << get_hostname() << "\n"
-            << network_interfaces->to_string() << std::endl;
-  help_msg_client();
-  discovery_service.start_client();
-
-  while (1)
-  {
-    if (key_hit())
-    {
-      string cmd;
-      std::cin >> cmd;
-      if (string_equals(cmd, "EXIT"))
-      {
-        monitoring_service.tcp_socket.send("exit");
-        exit(EXIT_SUCCESS);
-      }
-    }
-    MachineEndpoint server_machine_endpoint;
-    if (!monitoring_service.running && discovery_service.endpoints.dequeue(server_machine_endpoint))
-    {
-      monitoring_service.start_client(server_machine_endpoint);
-    }
-  }
-  return 0;
-}
 
 int main(int argc, char **argv)
 {
@@ -160,6 +90,7 @@ int main(int argc, char **argv)
     printf("Usage: main <manager> if manager else <> for participant\n");
     return -1;
   }
+
   is_server = argc > 1 && string_equals(argv[1], "manager");
 
   struct sigaction sa;
@@ -167,28 +98,7 @@ int main(int argc, char **argv)
   sa.sa_flags = SA_RESTART;
   sigaction(SIGINT, &sa, NULL);
 
-  discovery_service.port = INITIAL_PORT + 50;
-  monitoring_service.port = INITIAL_PORT + 51;
-
-  ssize_t exit_code;
-  if (is_server)
-  {
-    if ((exit_code = server()) != 0)
-    {
-      printf("Exit Code: %zi \n", exit_code);
-    }
-  }
-  else
-  {
-    if ((exit_code = client()) != 0)
-    {
-      printf("Exit Code: %zi \n", exit_code);
-    }
-  }
-
-  if (errno != 0)
-  {
-    perror("errno:");
-  }
-  return exit_code;
+  discovery_service.port = INITIAL_PORT + 0;
+  monitoring_service.port = INITIAL_PORT + 1;
+  return 0;
 }

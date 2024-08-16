@@ -53,5 +53,9 @@ namespace Concurrent
 			}
 			return false;
 		}
+		bool empty() {
+			T top;
+			return !peek(top);
+		}
 	};
 }

@@ -31,10 +31,10 @@ using string_view = std::string_view;
 
 struct DiscoveryService
 {
-    pthread_t thread;
-    bool running;
-    int port;
-    Socket udp_socket;
+    pthread_t thread = {};
+    bool running = {};
+    int port = {};
+    Socket udp_socket = {};
     Concurrent::LockFreeQueue<MachineEndpoint> endpoints = {};
     ~DiscoveryService()
     {
@@ -143,7 +143,7 @@ void DiscoveryService::start_client()
         IpEndpoint braodcast_ep = IpEndpoint::broadcast(ds->port);
         
         int result = client_socket.open(AddressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
-        result |= client_socket.bind(InternetAddress::Any, ds->port);
+        //result |= client_socket.bind(InternetAddress::Any, ds->port);
         result |= client_socket.set_option(SO_BROADCAST, 1);
 
         while (ds->running)
@@ -164,8 +164,7 @@ void DiscoveryService::start_client()
             string_view msg = string_view(client_message.data(), read).substr(0, read);
             if (msg == server_msg)
             {
-                MachineEndpoint top{INADDR_ANY, ds->port};
-                if (!ds->endpoints.peek(top))
+                if (ds->endpoints.empty())
                 {
                     ds->endpoints.enqueue(server_endpoint);
                 }
