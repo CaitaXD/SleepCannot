@@ -53,7 +53,7 @@ namespace Election {
 // Send coordinator message to all participants
 void Election::send_coordinator(Node& node) {
     node.participants.lock();
-    for (auto &[host, participant] : node.participants.map) {
+    for (auto &[host, participant] : node.participants.map) { // might need to use map.at(host) instead of participant
         participant.socket->send("Ec" + std::to_string(node.info.id));
     }
     node.participants.unlock();
@@ -62,7 +62,7 @@ void Election::send_coordinator(Node& node) {
 // Send election message to participants with higher id
 void Election::send_election(Node& node) {
     node.participants.lock();
-    for (auto &[host, participant] : node.participants.map) {
+    for (auto &[host, participant] : node.participants.map) { // might need to use map.at(host) instead of participant
         if (node.info.id < participant.id) {
             participant.socket->send("Ee" + std::to_string(node.info.id));
         }
@@ -75,7 +75,7 @@ void Election::send_election(Node& node) {
 void Election::answer_election(Node& node, int sender_id) {
     if (node.info.id > sender_id) {
         node.participants.lock();
-        for (auto &[host, participant] : node.participants.map) {
+        for (auto &[host, participant] : node.participants.map) { // might need to use map.at(host) instead of participant
             if (participant.id != sender_id) continue;
             participant.socket->send("Ea" + std::to_string(node.info.id));
             if (!node.has_started_election) Election::run_election(node);

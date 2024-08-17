@@ -139,7 +139,7 @@ monitoring:
         .id = 0
     };
 
-    Node node{1, 0};
+    Node node{me, 0};
     node.participants.add(me);
     node.participants.add(server);
     node.info = me;
@@ -216,7 +216,7 @@ monitoring:
         .id = 1
     };
 
-    Node node{0, 0};
+    Node node{me};
     node.participants.add(me);
     node.participants.add(client);
     node.info = me;

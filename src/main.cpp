@@ -99,6 +99,7 @@ int main(int argc, char **argv)
   sigaction(SIGINT, &sa, NULL);
 
   discovery_service.port = INITIAL_PORT + 0;
+  is_server? discovery_service.start_server(): discovery_service.start_client();
   monitoring_service.port = INITIAL_PORT + 1;
   return 0;
 }
