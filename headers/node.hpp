@@ -13,10 +13,12 @@
 #include <string>
 #include <pthread.h>
 #include "management.hpp"
-#include "Net/Socket.hpp"
 #include "macros.h"
+#include "Net/Socket.hpp"
+#include "discovery_service.h"
 
 #define INITIAL_ID 1000
+#define CLEAR_SCREEN "\033[2J" // ascii escape code to clear the screen
 
 struct Message {
     int id;
@@ -25,21 +27,17 @@ struct Message {
 
 class Node {
     public:
-        participant_t info; // info about this node
-        ParticipantTable participants; // every node keeps a copy of the participants table
+        participant_t info = {}; // info about this node
+        ParticipantTable participants = {}; // every node keeps a copy of the participants table
         int manager_id = -1; // id of the manager node
         bool has_started_election = false;
-        pthread_t accept_thread = {};
-        // std::mutex msg_mutex; // only one thread can access messages at a time
-        // std::vector<Message> messages; // messages received by this node
+        DiscoveryService ds = {};
 
-        Node(participant_t info, int manager_id);
-        Node(participant_t info);
+        Node(bool is_server);
         ~Node();
-        void start_node(); // this function should connect node to all other nodes
+
+        void run_node();
         void end_node();
-        // void listen(); // listen for messages, updating message vector
-        void accept_nodes(); // accept connections from other nodes
         bool is_manager();
         bool my_self(participant_t &participant);
         int last_id();
@@ -50,22 +48,73 @@ class Node {
 #ifndef NODE_IMPLEMENTATION
 #define NODE_IMPLEMENTATION
 
-Node::Node(participant_t info, int manager_id) {
-    this->info = info;
-    this->manager_id = manager_id;
+Node::Node(bool is_server) {
+    this->ds.port = INITIAL_PORT + 0;
+    if (is_server) {
+        this->info.id = INITIAL_ID;
+        this->manager_id = this->info.id;
+    }    
 }
 
-Node::Node(participant_t info) {
-    this->info = info;
-    this->manager_id = info.id;
-}
-
-void Node::start_node() {
+Node::~Node() {
 
 }
 
-void Node::end_node() {
+void Node::run_node() {
+    StringEqComparerIgnoreCase string_equals;
+    if (this->is_manager()) {
+        this->ds.start_server();
+        //monitoring_service.start_server(participants);
 
+        help_msg_server();
+        this->participants.print();
+
+        while (1) {
+            this->participants.lock();   
+            if (key_hit()) {
+                command_exec(participants);
+            }
+            
+            if (this->participants.dirty) {
+                std::cout << CLEAR_SCREEN << "Manager\n";
+                help_msg_server();
+                this->participants.print();
+            }
+
+            MachineEndpoint discoveredMachine;
+            if (this->ds.endpoints.dequeue(discoveredMachine)) {
+                this->participants.add(participant_t{
+                    .machine = discoveredMachine,
+                    .status = true,
+                    .socket = std::make_shared<Socket>(),
+                    .last_conection_timestamp = time(NULL)});
+            }
+
+            this->participants.unlock();
+            msleep(300); // Let other threads get the GODDAMN MUTEX
+        }
+    } else {
+        NetworkInterfaceList network_interfaces = NetworkInterfaceList::begin();
+        std::cout << "MAC ADDRESS: " << MacAddress::get_mac().mac_str << "\nHOSTNAME: " << get_hostname() << "\n"
+                    << network_interfaces->to_string() << std::endl;
+        help_msg_client();
+        this->ds.start_client();
+
+        while (1) {
+            if (key_hit()) {
+                string cmd;
+                std::cin >> cmd;
+                if (string_equals(cmd, "EXIT")) {
+                    //monitoring_service.tcp_socket.send("exit");
+                    exit(EXIT_SUCCESS);
+                }
+            }
+            MachineEndpoint server_machine_endpoint;
+            // if (!monitoring_service.running && discovery_service.endpoints.dequeue(server_machine_endpoint)) {
+            //     monitoring_service.start_client(server_machine_endpoint);
+            // }
+        }
+    }
 }
 
 int Node::last_id() {
@@ -78,23 +127,6 @@ int Node::last_id() {
 
     return last_id;
 }
-
-// // run in thread (TODO: implement on monitoring maybe)
-// void Node::listen() {
-//     this->msg_mutex.lock();
-//     this->messages.clear();
-//     this->msg_mutex.unlock();
-//     while (true) {
-//         std::string msg;
-//         this->info.socket->recv(&msg); // check if it is blocking
-//         char msg_type = msg[0]; // check if message is of type 'e', 'c' or 'a'
-//         int id = std::stoi(msg.substr(2));
-//         this->msg_mutex.lock();
-//         this->messages.push_back(Message{.id = id, .msg = msg_type});
-//         this->msg_mutex.unlock();
-//         msleep(300); // let other threads get the GODDAMN mutex
-//     }
-// }
 
 bool Node::is_manager() {
     return this->manager_id == this->info.id;
