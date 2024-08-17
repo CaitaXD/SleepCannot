@@ -16,6 +16,8 @@
 #include "Net/Socket.hpp"
 #include "macros.h"
 
+#include "DataStructures/LockFreeQueue.h"
+
 #define INITIAL_ID 1000
 
 struct Message {
@@ -36,7 +38,7 @@ class Node {
         Node(participant_t info, int manager_id);
         Node(participant_t info);
         ~Node();
-        void start_node(); // this function should connect node to all other nodes
+        void start_node(Concurrent::LockFreeQueue<MachineEndpoint> &queue); // this function should connect node to all other nodes
         void end_node();
         // void listen(); // listen for messages, updating message vector
         void accept_nodes(); // accept connections from other nodes
@@ -60,8 +62,33 @@ Node::Node(participant_t info) {
     this->manager_id = info.id;
 }
 
-void Node::start_node() {
+void Node::start_node(Concurrent::LockFreeQueue<MachineEndpoint> &queue) {
+    participants.lock();
+    participants.add(info);
+    participants.unlock();
 
+    while (true) {
+        if (is_manager()) {
+            MachineEndpoint discoveredMachine;
+            if (queue.dequeue(discoveredMachine)) {
+                participants.lock();
+                
+                if (participants.map.find(discoveredMachine.hostname) != participants.map.end()) {
+                    participants.unlock();
+                    continue;
+                }
+                
+                participants.add(participant_t{
+                    .machine = discoveredMachine,
+                    .status = true,
+                    .socket = std::make_shared<Socket>(),
+                    .last_conection_timestamp = time(NULL)
+                });
+                
+                participants.unlock();
+            }   
+        }
+    }
 }
 
 void Node::end_node() {

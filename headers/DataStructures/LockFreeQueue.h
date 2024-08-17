@@ -1,3 +1,5 @@
+#ifndef LOCK_FREE_QUEUE_H_
+#define LOCK_FREE_QUEUE_H_
 /*
   Linked list implementation of a queue with atomic operations so only one thread can enqueue and dequeue at a time
 */
@@ -59,3 +61,5 @@ namespace Concurrent
 		}
 	};
 }
+
+#endif // LOCK_FREE_QUEUE_H_
