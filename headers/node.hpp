@@ -20,31 +20,34 @@
 
 #define INITIAL_ID 1000
 
-struct Message {
+struct Message
+{
     int id;
     char msg;
 };
 
-class Node {
-    public:
-        participant_t info; // info about this node
-        ParticipantTable participants; // every node keeps a copy of the participants table
-        int manager_id = -1; // id of the manager node
-        bool has_started_election = false;
-        pthread_t accept_thread = {};
-        // std::mutex msg_mutex; // only one thread can access messages at a time
-        // std::vector<Message> messages; // messages received by this node
+class Node
+{
+public:
+    participant_t info;            // info about this node
+    ParticipantTable participants; // every node keeps a copy of the participants table
+    int manager_id = -1;           // id of the manager node
+    bool has_started_election = false;
+    pthread_t accept_thread = {};
+    // std::mutex msg_mutex; // only one thread can access messages at a time
+    // std::vector<Message> messages; // messages received by this node
 
-        Node(participant_t info, int manager_id);
-        Node(participant_t info);
-        ~Node();
-        void start_node(Concurrent::LockFreeQueue<MachineEndpoint> &queue); // this function should connect node to all other nodes
-        void end_node();
-        // void listen(); // listen for messages, updating message vector
-        void accept_nodes(); // accept connections from other nodes
-        bool is_manager();
-        bool my_self(participant_t &participant);
-        int last_id();
+    Node(participant_t info, int manager_id);
+    Node(participant_t info);
+    ~Node();
+    void start_node(); // this function should connect node to all other nodes
+    void end_node();
+    // void listen(); // listen for messages, updating message vector
+    void accept_nodes(); // accept connections from other nodes
+    bool is_manager();
+    bool my_self(participant_t &participant);
+    int last_id();
+    void search_peers(Concurrent::LockFreeQueue<MachineEndpoint> &queue);
 };
 
 #endif // NODE_H_
@@ -52,54 +55,63 @@ class Node {
 #ifndef NODE_IMPLEMENTATION
 #define NODE_IMPLEMENTATION
 
-Node::Node(participant_t info, int manager_id) {
+Node::Node(participant_t info, int manager_id)
+{
     this->info = info;
     this->manager_id = manager_id;
 }
 
-Node::Node(participant_t info) {
+Node::Node(participant_t info)
+{
     this->info = info;
     this->manager_id = info.id;
 }
 
-void Node::start_node(Concurrent::LockFreeQueue<MachineEndpoint> &queue) {
+void Node::start_node()
+{
     participants.lock();
     participants.add(info);
     participants.unlock();
+}
 
-    while (true) {
-        if (is_manager()) {
-            MachineEndpoint discoveredMachine;
-            if (queue.dequeue(discoveredMachine)) {
-                participants.lock();
-                
-                if (participants.map.find(discoveredMachine.hostname) != participants.map.end()) {
-                    participants.unlock();
-                    continue;
-                }
-                
-                participants.add(participant_t{
-                    .machine = discoveredMachine,
-                    .status = true,
-                    .socket = std::make_shared<Socket>(),
-                    .last_conection_timestamp = time(NULL)
-                });
-                
+void Node::end_node()
+{
+}
+
+void Node::search_peers(Concurrent::LockFreeQueue<MachineEndpoint> &queue)
+{
+    if (is_manager())
+    {
+        MachineEndpoint discoveredMachine;
+        while (queue.dequeue(discoveredMachine))
+        {
+            participants.lock();
+
+            if (participants.map.find(discoveredMachine.hostname) != participants.map.end())
+            {
                 participants.unlock();
-            }   
+                continue;
+            }
+
+            participants.add(participant_t{
+                .machine = discoveredMachine,
+                .status = true,
+                .socket = std::make_shared<Socket>(),
+                .last_conection_timestamp = time(NULL)});
+
+            participants.unlock();
         }
     }
 }
 
-void Node::end_node() {
-
-}
-
-int Node::last_id() {
+int Node::last_id()
+{
     this->participants.lock();
     int last_id = INITIAL_ID;
-    for (auto &[host, participant] : this->participants.map) {
-        if (participant.id < last_id) last_id = participant.id;
+    for (auto &[host, participant] : this->participants.map)
+    {
+        if (participant.id < last_id)
+            last_id = participant.id;
     }
     this->participants.unlock();
 
@@ -123,11 +135,13 @@ int Node::last_id() {
 //     }
 // }
 
-bool Node::is_manager() {
+bool Node::is_manager()
+{
     return this->manager_id == this->info.id;
-}   
+}
 
-bool Node::my_self(participant_t &participant) {
+bool Node::my_self(participant_t &participant)
+{
     return participant.id == this->info.id;
 }
 
