@@ -7,6 +7,10 @@
 #ifndef NODE_H_
 #define NODE_H_
 
+#define MONITORING_SERVICE_IMPLEMENTATION
+#include "monitoring_service.h"
+#undef MONITORING_SERVICE_IMPLEMENTATION
+
 #include <iostream>
 #include <vector>
 #include <mutex>
@@ -37,7 +41,6 @@ public:
     int manager_id = -1;                // id of the manager node
     bool has_started_election = false;
     DiscoveryService ds = {};
-    MonitoringService ms = {*this};
 
     Node(bool is_server);
     ~Node();
@@ -114,7 +117,8 @@ void Node::run_node()
                     .status = true,
                     .socket = std::make_shared<Socket>(),
                     .last_conection_timestamp = time(NULL),
-                    .id = last_id() - 1});
+                    .id = last_id() - 1,
+                    .is_manager = false});
             }
 
             participants.unlock();

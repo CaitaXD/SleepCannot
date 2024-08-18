@@ -156,7 +156,7 @@ struct ParticipantTable
     participant_t &get(const std::string &hostname);
 
     std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_socket(const Socket &socket);
-    std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_address(const IpEndpoint &address);
+    std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_address(const MachineEndpoint &address);
 };
 
 #endif // MANAGEMENT_H_
@@ -248,11 +248,11 @@ std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> Pa
     return std::nullopt;
 }
 
-std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> ParticipantTable::find_by_address(const IpEndpoint &address)
+std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> ParticipantTable::find_by_address(const MachineEndpoint &address)
 {
     for (auto &[host, participant] : map)
     {
-        if (participant.socket->file_descriptor == socket.file_descriptor)
+        if (participant.machine == address)
         {
             return std::make_pair(host, std::reference_wrapper<participant_t>(map.at(host)));
         }
