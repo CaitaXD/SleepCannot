@@ -206,12 +206,14 @@ void Node::start_serve_peers(int backlog)
                 Socket client_socket = server_socket.accept(peerAddress);
                 if (client_socket.lasterrno != 0) {
                     perrorcode("Node::accept");
+                    participants.unlock();
                     continue;
                 }
 
                 auto optional_peer = participants.find_by_address(peerAddress);
                 if (!optional_peer.has_value()) {
                     std::eprintf("How did we get here?");
+                    participants.unlock();
                     continue;
                 }
                 auto &[perr_name, peer] = optional_peer.value();
