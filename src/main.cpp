@@ -104,6 +104,7 @@ int server()
     {
       std::cout << CLEAR_SCREEN << "Manager\n";
       help_msg_server();
+      // send modified table to all clients (backup servers)
       participants.print();
     }
 

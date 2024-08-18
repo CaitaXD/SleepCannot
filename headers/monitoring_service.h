@@ -21,6 +21,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <vector>
+#include <iostream>
 #include <pthread.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -117,6 +118,29 @@ void MonitoringService::start_server(ParticipantTable &participants)
         if (errno == 0 && imediate_test > 0) { 
           participant.last_conection_timestamp = unix_epoch_now;
         }
+      }
+
+      if(ms->participants->send_table){
+        std::string stringified_table = "table\t"+std::to_string(ms->participants->clock)+"\t";
+
+        for (auto &[host, participant] : ms->participants->map){
+            std::string p_mac_addr(reinterpret_cast<char*>(participant.machine.mac.mac_addr), sizeof(participant.machine.mac.mac_addr)); // unsigned char*
+            stringified_table += p_mac_addr+"\t";
+            std::string p_mac_str(reinterpret_cast<char*>(participant.machine.mac.mac_str), sizeof(participant.machine.mac.mac_str)); // char*
+            stringified_table += p_mac_str+"\t";
+            stringified_table += inet_ntoa(((sockaddr_in *)&participant.machine.socket_address)->sin_addr); // ip (idk the type)
+            stringified_table += "\t"+participant.machine.hostname+"\t"; // std::string
+            stringified_table += std::to_string(participant.status)+"\t";  // bool
+            stringified_table += std::to_string(participant.last_conection_timestamp)+"\t"; // time_t
+        }
+
+        for (auto &[host, participant] : ms->participants->map){
+            participant.socket->send(stringified_table);
+        }
+
+        std::cout << stringified_table << std::endl;
+        
+        ms->participants->send_table = false;
       }
 
       ms->participants->unlock();
@@ -227,6 +251,9 @@ void MonitoringService::start_client(const IpEndpoint &server_machine)
       else if (cmd == "exit") {
         ms->running = false;
         return NULL;
+      }
+      else {
+        
       }
     }
     ms->running = false;
