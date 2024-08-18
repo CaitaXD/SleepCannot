@@ -30,13 +30,13 @@
 #include "../headers/Net/Socket.hpp"
 #undef SOCKET_IMPLEMENTATION
 
-#define DISCOVERY_SERVICE_IMPLEMENTATION
-#include "../headers/discovery_service.h"
-#undef DISCOVERY_SERVICE_IMPLEMENTATION
-
 #define MONITORING_SERVICE_IMPLEMENTATION
 #include "../headers/monitoring_service.h"
 #undef MONITORING_SERVICE_IMPLEMENTATION
+
+#define DISCOVERY_SERVICE_IMPLEMENTATION
+#include "../headers/discovery_service.h"
+#undef DISCOVERY_SERVICE_IMPLEMENTATION
 
 #define MANAGEMENT_IMPLEMENTATION
 #include "../headers/management.hpp"

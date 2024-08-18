@@ -57,8 +57,6 @@ private:
   void collect_file_descriptors();
 };
 
-#endif // MONITORING_SERVICE_H_
-
 #ifdef MONITORING_SERVICE_IMPLEMENTATION
 
 void MonitoringService::start_service()
@@ -222,3 +220,4 @@ void MonitoringService::stop()
 }
 
 #endif // MONITORING_SERVICE_IMPLEMENTATION
+#endif // MONITORING_SERVICE_H_
