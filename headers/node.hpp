@@ -16,6 +16,9 @@
 #include "macros.h"
 #include "Net/Socket.hpp"
 #include "discovery_service.h"
+//#include "monitoring_service.h"
+
+class MonitoringService; // forward declaration
 
 #define INITIAL_ID 1000
 #define CLEAR_SCREEN "\033[2J" // ascii escape code to clear the screen
@@ -69,6 +72,7 @@ Node::Node(bool is_server)
 
 Node::~Node()
 {
+    pthread_join(this->serve_peers_thread, NULL);
 }
 
 void Node::run_node()
@@ -143,6 +147,7 @@ void Node::run_node()
             //     ms.start_client(server_machine_endpoint);
             // }
         }
+        ds.stop();
     }
 }
 
