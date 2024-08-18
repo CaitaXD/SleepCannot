@@ -74,6 +74,7 @@ Node::~Node()
 void Node::run_node()
 {
     StringEqComparerIgnoreCase string_equals;
+    start_serve_peers();
     if (is_manager())
     {
         ds.start_server();
@@ -110,9 +111,6 @@ void Node::run_node()
                     .socket = std::make_shared<Socket>(),
                     .last_conection_timestamp = time(NULL),
                     .id = last_id() - 1});
-
-                connect_to_peers();
-                start_serve_peers();
             }
 
             participants.unlock();
