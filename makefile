@@ -7,7 +7,9 @@ BUILD_DIR = build
 BIN_DIR = bin
 
 # Source and Object files
-SOURCES = $(wildcard src/*.cpp)
+# SOURCES = $(wildcard src/*.cpp)
+# OBJECTS = $(SOURCES:src/%.cpp=$(BUILD_DIR)/%.o)
+SOURCES = $(wildcard src/main.cpp)
 OBJECTS = $(SOURCES:src/%.cpp=$(BUILD_DIR)/%.o)
 
 # Target executable name

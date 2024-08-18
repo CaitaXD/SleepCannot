@@ -20,6 +20,8 @@
 
 #define perrorcode(message) perrorcode_(message, __FILE__, __LINE__)
 
+#define eprintf(message, ...) fprintf(stderr, message " [%s:%d]", __FILE__, __LINE__, ##__VA_ARGS__)
+
 static inline void perrorcode_(const char *message, const char *file, int line)
 {
   perror(message);

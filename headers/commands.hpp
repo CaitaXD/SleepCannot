@@ -13,6 +13,16 @@
 #include "macros.h"
 #include "management.hpp"
 
+// Polls stdin for a key press
+bool key_hit()
+{
+  struct timeval tv = {0, 0};
+  fd_set readfds;
+  FD_ZERO(&readfds);
+  FD_SET(STDIN_FILENO, &readfds);
+  return select(STDIN_FILENO + 1, &readfds, NULL, NULL, &tv) == 1;
+}
+
 typedef void *(*Callback)(void *);
 typedef struct Command
 {
@@ -62,9 +72,8 @@ enum CommandType get_command_type(string_view command)
   return COMMAND_ERROR;
 }
 
-void *clear_screen(void *args)
+void *clear_screen()
 {
-  (void)args;
   printf("\033[H\033[J\n");
   return NULL;
 }

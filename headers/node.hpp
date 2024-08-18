@@ -13,12 +13,12 @@
 #include <string>
 #include <pthread.h>
 #include "management.hpp"
-#include "Net/Socket.hpp"
 #include "macros.h"
-
-#include "DataStructures/LockFreeQueue.h"
+#include "Net/Socket.hpp"
+#include "discovery_service.h"
 
 #define INITIAL_ID 1000
+#define CLEAR_SCREEN "\033[2J" // ascii escape code to clear the screen
 
 struct Message
 {
@@ -29,25 +29,27 @@ struct Message
 class Node
 {
 public:
-    participant_t info;            // info about this node
-    ParticipantTable participants; // every node keeps a copy of the participants table
-    int manager_id = -1;           // id of the manager node
+    participant_t info = {};            // info about this node
+    ParticipantTable participants = {}; // every node keeps a copy of the participants table
+    int manager_id = -1;                // id of the manager node
     bool has_started_election = false;
-    pthread_t accept_thread = {};
-    // std::mutex msg_mutex; // only one thread can access messages at a time
-    // std::vector<Message> messages; // messages received by this node
+    DiscoveryService ds = {};
+    MonitoringService ms = {*this};
 
-    Node(participant_t info, int manager_id);
-    Node(participant_t info);
+    Node(bool is_server);
     ~Node();
-    void start_node(); // this function should connect node to all other nodes
+
+    void run_node();
     void end_node();
-    // void listen(); // listen for messages, updating message vector
-    void accept_nodes(); // accept connections from other nodes
     bool is_manager();
     bool my_self(participant_t &participant);
     int last_id();
-    void search_peers(Concurrent::LockFreeQueue<MachineEndpoint> &queue);
+
+private:
+    pthread_t serve_peers_thread = {};
+
+    void start_serve_peers(int backlog = 5);
+    void connect_to_peers();
 };
 
 #endif // NODE_H_
@@ -55,51 +57,93 @@ public:
 #ifndef NODE_IMPLEMENTATION
 #define NODE_IMPLEMENTATION
 
-Node::Node(participant_t info, int manager_id)
+Node::Node(bool is_server)
 {
-    this->info = info;
-    this->manager_id = manager_id;
+    ds.port = INITIAL_PORT + 0;
+    if (is_server)
+    {
+        info.id = INITIAL_ID;
+        manager_id = info.id;
+    }
 }
 
-Node::Node(participant_t info)
-{
-    this->info = info;
-    this->manager_id = info.id;
-}
-
-void Node::start_node()
-{
-    participants.lock();
-    participants.add(info);
-    participants.unlock();
-}
-
-void Node::end_node()
+Node::~Node()
 {
 }
 
-void Node::search_peers(Concurrent::LockFreeQueue<MachineEndpoint> &queue)
+void Node::run_node()
 {
+    StringEqComparerIgnoreCase string_equals;
     if (is_manager())
     {
-        MachineEndpoint discoveredMachine;
-        while (queue.dequeue(discoveredMachine))
+        ds.start_server();
+        // ms.start_server(participants);
+
+        help_msg_server();
+        participants.print();
+
+        while (is_manager())
         {
             participants.lock();
-
-            if (participants.map.find(discoveredMachine.hostname) != participants.map.end())
+            if (key_hit())
             {
-                participants.unlock();
-                continue;
+                command_exec(participants);
             }
 
-            participants.add(participant_t{
-                .machine = discoveredMachine,
-                .status = true,
-                .socket = std::make_shared<Socket>(),
-                .last_conection_timestamp = time(NULL)});
+            if (participants.dirty)
+            {
+                std::cout << CLEAR_SCREEN << "Manager\n";
+                help_msg_server();
+                participants.print();
+            }
+
+            MachineEndpoint discoveredMachine;
+            if (ds.endpoints.dequeue(discoveredMachine))
+            {
+                auto map = participants.map;
+                if (map.find(discoveredMachine.hostname) != map.end())
+                    continue;
+
+                participants.add(participant_t{
+                    .machine = discoveredMachine,
+                    .status = true,
+                    .socket = std::make_shared<Socket>(),
+                    .last_conection_timestamp = time(NULL),
+                    .id = last_id() - 1});
+
+                connect_to_peers();
+                start_serve_peers();
+            }
 
             participants.unlock();
+            msleep(300); // Let other threads get the GODDAMN MUTEX
+        }
+        ds.stop();
+    }
+    else
+    {
+        NetworkInterfaceList network_interfaces = NetworkInterfaceList::begin();
+        std::printf("MAC ADDRESS: %s\nHOSTNAME: %s\n%s\n", MacAddress::get_mac().mac_str, get_hostname().c_str(), network_interfaces->to_string().c_str());
+
+        help_msg_client();
+        ds.start_client();
+
+        while (!is_manager())
+        {
+            if (key_hit())
+            {
+                string cmd;
+                std::cin >> cmd;
+                if (string_equals(cmd, "EXIT"))
+                {
+                    // ms.tcp_socket.send("exit");
+                    exit(EXIT_SUCCESS);
+                }
+            }
+            MachineEndpoint server_machine_endpoint;
+            // if (!ms.running && discovery_service.endpoints.dequeue(server_machine_endpoint)) {
+            //     ms.start_client(server_machine_endpoint);
+            // }
         }
     }
 }
@@ -114,26 +158,8 @@ int Node::last_id()
             last_id = participant.id;
     }
     this->participants.unlock();
-
     return last_id;
 }
-
-// // run in thread (TODO: implement on monitoring maybe)
-// void Node::listen() {
-//     this->msg_mutex.lock();
-//     this->messages.clear();
-//     this->msg_mutex.unlock();
-//     while (true) {
-//         std::string msg;
-//         this->info.socket->recv(&msg); // check if it is blocking
-//         char msg_type = msg[0]; // check if message is of type 'e', 'c' or 'a'
-//         int id = std::stoi(msg.substr(2));
-//         this->msg_mutex.lock();
-//         this->messages.push_back(Message{.id = id, .msg = msg_type});
-//         this->msg_mutex.unlock();
-//         msleep(300); // let other threads get the GODDAMN mutex
-//     }
-// }
 
 bool Node::is_manager()
 {
@@ -143,6 +169,94 @@ bool Node::is_manager()
 bool Node::my_self(participant_t &participant)
 {
     return participant.id == this->info.id;
+}
+
+void Node::start_serve_peers(int backlog)
+{
+    Socket &socket = *info.socket;
+    int result = 0;
+    if (socket.file_descriptor == -1)
+    {
+        result |= socket.open(SocketType::Stream, SocketProtocol::TCP);
+    }
+    result |= socket.bind(info.machine.get_port());
+    result |= socket.listen(backlog);
+    result |= socket.set_option(SO_REUSEADDR, 1);
+
+    if (result < 0)
+    {
+        perrorcode("Node::listen");
+        return;
+    }
+
+    pthread_create(&serve_peers_thread, NULL, [](void *data) -> void *
+                   {
+        Node *node = (Node *)data;
+        ParticipantTable &participants = node->participants;
+        Socket& server_socket = *node->info.socket;
+
+        while(true) {
+            int result = 0;
+            participants.lock();
+            {
+                if (participants.map.size() == 0) {
+                    participants.unlock();
+                    continue;
+                }
+
+                MachineEndpoint peerAddress;
+                Socket client_socket = server_socket.accept(peerAddress);
+                if (client_socket.lasterrno != 0) {
+                    perrorcode("Node::accept");
+                    continue;
+                }
+
+                auto optional_peer = participants.find_by_address(peerAddress);
+                if (!optional_peer.has_value()) {
+                    std::eprintf("How did we get here?");
+                    continue;
+                }
+                auto &[perr_name, peer] = optional_peer.value();
+                *peer.get().socket = std::move(client_socket);
+            }
+            participants.unlock();
+            msleep(300); // Let other threads get the GODDAMN MUTEX
+        }
+
+        return NULL; }, this);
+}
+
+void Node::connect_to_peers()
+{
+    participants.lock();
+    for (auto &[host, participant] : participants.map)
+    {
+        if (participant.socket->file_descriptor > -1)
+            continue;
+
+        Socket &socket = *participant.socket;
+        int result = socket.open(SocketType::Stream, SocketProtocol::TCP);
+        result |= socket.set_option(SO_REUSEADDR, 1);
+        if (result < 0)
+        {
+            perrorcode("Node::connect_to_peers");
+            continue;
+        }
+    try_connect:
+        result = socket.connect(participant.machine);
+        if (result < 0)
+        {
+            perrorcode("Node::connect_to_peers");
+            if (socket.lasterrno == ECONNREFUSED)
+            {
+                msleep(300);
+                goto try_connect;
+            }
+            continue;
+        }
+    }
+    participants.unlock();
+    msleep(300); // Let other threads get the GODDAMN MUTEX
 }
 
 #endif // NODE_IMPLEMENTATION

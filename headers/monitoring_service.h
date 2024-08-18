@@ -50,8 +50,8 @@ struct MonitoringService
   void stop();
 
 private:
-  std::vector<FileDescriptor *> file_descriptors = std::vector<FileDescriptor *>();
-  std::vector<string> to_remove;
+  std::vector<FileDescriptor *> file_descriptors = {};
+  std::vector<string> to_remove = {};
   void monitor_peers();
   void update_peers_status(time_t timeout = 5);
   void collect_file_descriptors();

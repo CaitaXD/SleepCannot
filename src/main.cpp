@@ -46,20 +46,12 @@
 #include "../headers/commands.hpp"
 #undef COMMANDS_IMPLEMENTATION
 
+#define NODE_IMPLEMENTATION
+#include "../headers/node.hpp"
+#undef NODE_IMPLEMENTATION
+
 StringEqComparerIgnoreCase string_equals;
 
-// Polls stdin for a key press
-bool key_hit()
-{
-  struct timeval tv = {0, 0};
-  fd_set readfds;
-  FD_ZERO(&readfds);
-  FD_SET(STDIN_FILENO, &readfds);
-  return select(STDIN_FILENO + 1, &readfds, NULL, NULL, &tv) == 1;
-}
-
-DiscoveryService discovery_service;
-MonitoringService monitoring_service;
 bool is_server = false;
 
 // SIGINT handler for properly exiting the program
@@ -81,8 +73,6 @@ void cleanup(int signum)
   errno = errno_save;
 }
 
-#define CLEAR_SCREEN "\033[2J" // ascii escape code to clear the screen
-
 int main(int argc, char **argv)
 {
   if (argc < 1 || argc > 2)
@@ -98,8 +88,8 @@ int main(int argc, char **argv)
   sa.sa_flags = SA_RESTART;
   sigaction(SIGINT, &sa, NULL);
 
-  discovery_service.port = INITIAL_PORT + 0;
-  is_server? discovery_service.start_server(): discovery_service.start_client();
-  monitoring_service.port = INITIAL_PORT + 1;
+  Node node(is_server);
+  node.run_node();
+
   return 0;
 }
