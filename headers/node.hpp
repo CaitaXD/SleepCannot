@@ -176,10 +176,11 @@ void Node::start_serve_peers(int backlog)
     if (socket.file_descriptor == -1)
     {
         result |= socket.open(SocketType::Stream, SocketProtocol::TCP);
+        result |= socket.bind(info.machine.get_port());
+        result |= socket.listen(backlog);
+        result |= socket.set_option(SO_REUSEADDR, 1);
     }
-    result |= socket.bind(info.machine.get_port());
-    result |= socket.listen(backlog);
-    result |= socket.set_option(SO_REUSEADDR, 1);
+   
 
     if (result < 0)
     {
@@ -213,9 +214,10 @@ void Node::start_serve_peers(int backlog)
                 auto optional_peer = participants.find_by_address(peerAddress);
                 if (!optional_peer.has_value()) {
                     std::eprintf("How did we get here?");
-                    participants.unlock();
+                    participants.unlock(); 
                     continue;
                 }
+
                 auto &[perr_name, peer] = optional_peer.value();
                 *peer.get().socket = std::move(client_socket);
             }
