@@ -176,11 +176,10 @@ void Node::start_serve_peers(int backlog)
     if (socket.file_descriptor == -1)
     {
         result |= socket.open(SocketType::Stream, SocketProtocol::TCP);
-        result |= socket.bind(info.machine.get_port());
+        result |= socket.bind(info.machine);
         result |= socket.listen(backlog);
         result |= socket.set_option(SO_REUSEADDR, 1);
     }
-   
 
     if (result < 0)
     {
