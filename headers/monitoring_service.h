@@ -182,6 +182,22 @@ void MonitoringService::monitor_peers()
         participants.dirty = true;
       }
 
+      read = peer.socket->send(server_msg);
+
+      if (errno == EPIPE)
+      {
+        perrorcode("send");
+        to_remove.push_back(perr_name);
+        participants.dirty = true;
+        continue;
+      }
+
+      if (read < 0)
+      {
+        perrorcode("send");
+        continue;
+      }
+
       // if (participants.send_table)
       {
         std::string stringified_table = "BEGIN TABLE\t" + std::to_string(participants.clock) + "\t";
@@ -221,7 +237,7 @@ void MonitoringService::monitor_peers()
       {
         string table = buffer.substr(table_start);
         std::vector<string> arr = splitString(table, delimiter);
-        ptrdiff_t end = find(arr .begin(), arr .end(), "END TABLE") - arr.begin();
+        ptrdiff_t end = find(arr.begin(), arr.end(), "END TABLE") - arr.begin();
         std::span<string> table_span = std::span<string>(arr).subspan(2, end - 2);
         size_t i = 0;
         while (i < table_span.size())
