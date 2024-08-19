@@ -1,9 +1,3 @@
-/*
-    Managent Table of participants
-    This service is used to manage the participants in the network
-    It uses a mutex to control access to the table and a boolean to let the UI know when to print the table
-*/
-
 #ifndef MANAGEMENT_H_
 #define MANAGEMENT_H_
 
@@ -19,6 +13,16 @@
 #include "Net/Socket.hpp"
 #include "string_helpers.hpp"
 
+// Used to control read and write access to the management table
+typedef struct mutex_data_t
+{
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool updated; // might not be necessary
+    int update_count;
+    std::vector<int> read_count;
+} mutex_data_t;
+
 #define MAXLINE 1024
 #define INITIAL_PORT 35512
 
@@ -30,7 +34,7 @@ string server_msg = "Hello there!";
 
 #define MAC_ADDR_MAX 6
 #define MAC_STR_MAX 64
-#define MAC_ADDRES_FILE "/sys/class/net/eth0/address"
+#define MAC_ADDRES_FILE "/sys/class/net/enp0s3/address"
 
 struct MacAddress
 {
@@ -142,6 +146,8 @@ struct ParticipantTable
     std::unordered_map<string, participant_t, StringHashIgnoreCase, StringEqComparerIgnoreCase> map;
     bool dirty;
     std::mutex sync_root;
+    unsigned int clock;
+    bool send_table;
 
     ParticipantTable();
     ~ParticipantTable();
@@ -162,7 +168,30 @@ struct ParticipantTable
 #endif // MANAGEMENT_H_
 #ifdef MANAGEMENT_IMPLEMENTATION
 
-ParticipantTable::ParticipantTable() : map(), dirty(false), sync_root(){};
+void show_status(const std::unordered_map<string, participant_t> &table, mutex_data_t &mutex_data, int &read_count)
+{
+    while (true)
+    {
+        std::unique_lock<std::mutex> lock(mutex_data.mutex);
+        mutex_data.cv.wait(lock, [&]
+                           { return read_count < mutex_data.update_count; });
+        read_count = mutex_data.update_count;
+        for (auto it = table.begin(); it != table.end(); ++it)
+        {
+            if (it->second.status)
+            {
+                std::cout << it->first << " is awake" << std::endl;
+            }
+            else
+            {
+                std::cout << it->first << " is asleep" << std::endl;
+            }
+        }
+        mutex_data.updated = false;
+    }
+}
+
+ParticipantTable::ParticipantTable() : map(), dirty(false), sync_root(), clock(0), send_table(false){};
 ParticipantTable::~ParticipantTable()
 {
     unlock();
@@ -194,6 +223,7 @@ void ParticipantTable::print()
                     status.c_str(),
                     tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec);
     }
+    std::cout << clock << std::endl;
     std::cout << std::endl;
     dirty = false;
 }
@@ -204,6 +234,8 @@ void ParticipantTable::add(const participant_t &participant)
     auto [_, success] = map.emplace(machine_hostname, participant);
     if (success)
     {
+        clock++;
+        send_table = true;
         dirty = true;
     }
 }
@@ -212,6 +244,8 @@ void ParticipantTable::remove(const std::string &hostname)
 {
     if (map.erase(hostname))
     {
+        clock++;
+        send_table = true;
         dirty = true;
     }
 }
