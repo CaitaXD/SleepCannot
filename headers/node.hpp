@@ -21,8 +21,6 @@ class MonitoringService *monitoring_service(class Node* node); // forward declar
 #include "discovery_service.h"
 #include "monitoring_service.h"
 
-
-
 #define INITIAL_ID 1000
 #define CLEAR_SCREEN "\033[2J" // ascii escape code to clear the screen
 
@@ -51,6 +49,8 @@ public:
     bool my_self(participant_t &participant);
     int last_id();
 
+    //void ms_start(class MonitoringService *ms);
+
 private:
     pthread_t serve_peers_thread = {};
 
@@ -76,16 +76,21 @@ Node::Node(bool is_server)
 Node::~Node()
 {
     pthread_join(this->serve_peers_thread, NULL);
+    delete this->ms;
 }
+
+// void Node::ms_start(class MonitoringService *ms) {
+//     ms->start_service();
+// }
 
 void Node::run_node()
 {
     StringEqComparerIgnoreCase string_equals;
     start_serve_peers();
+    //this->ms_start(this->ms);
     if (is_manager())
     {
         ds.start_server();
-        // ms.start_server(participants);
 
         help_msg_server();
         participants.print();
@@ -125,6 +130,7 @@ void Node::run_node()
             msleep(300); // Let other threads get the GODDAMN MUTEX
         }
         ds.stop();
+        //ms->stop();
     }
     else
     {
@@ -152,6 +158,7 @@ void Node::run_node()
             // }
         }
         ds.stop();
+        //ms->stop();
     }
 }
 
