@@ -163,10 +163,10 @@ void MonitoringService::monitor_peers()
         participants.dirty = true;
       }
       read = peer.socket->send(server_msg);
-      if(participants->send_table){
-        std::string stringified_table = "table\t"+std::to_string(participants->clock)+"\t";
+      if(participants.send_table){
+        std::string stringified_table = "table\t"+std::to_string(participants.clock)+"\t";
 
-        for (auto &[host, participant] : participants->map){
+        for (auto &[host, participant] : participants.map){
             std::string p_mac_addr(reinterpret_cast<char*>(participant.machine.mac.mac_addr), sizeof(participant.machine.mac.mac_addr)); // unsigned char*
             stringified_table += p_mac_addr+"\t";
             std::string p_mac_str(reinterpret_cast<char*>(participant.machine.mac.mac_str), sizeof(participant.machine.mac.mac_str)); // char*
@@ -191,8 +191,6 @@ void MonitoringService::monitor_peers()
     {
       char delimiter = '\t';
       std::vector<std::string> arr = splitString(read, delimiter);
-      std::cout << arr.at(0) << std::endl;
-      std::cout << cmd+"test" << std::endl;
       if (!arr.at(0).compare("table") || !arr.at(0).compare("probe from servertable")){
         std::cout << "clock: " << arr.at(1) << std::endl;
         long unsigned int i = 2;
