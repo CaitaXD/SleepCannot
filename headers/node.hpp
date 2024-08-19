@@ -115,7 +115,7 @@ void Node::run_node()
             }
 
             MachineEndpoint discoveredMachine;
-            if (ds.endpoints.dequeue(discoveredMachine))
+            while (ds.endpoints.dequeue(discoveredMachine))
             {
                 auto map = participants.map;
                 if (map.find(discoveredMachine.hostname) != map.end())
@@ -129,8 +129,8 @@ void Node::run_node()
                     .id = last_id() - 1,
                     .is_manager = false});
             }
-
             participants.unlock();
+            connect_to_peers();
             msleep(300); // Let other threads get the GODDAMN MUTEX
         }
         ds.stop();
