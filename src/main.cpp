@@ -32,7 +32,7 @@
 
 #define MONITORING_SERVICE_IMPLEMENTATION
 #include "../headers/monitoring_service.h"
-
+#undef MONITORING_SERVICE_IMPLEMENTATION
 
 #define DISCOVERY_SERVICE_IMPLEMENTATION
 #include "../headers/discovery_service.h"
