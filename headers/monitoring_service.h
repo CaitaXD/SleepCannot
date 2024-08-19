@@ -178,13 +178,13 @@ void MonitoringService::monitor_peers()
             stringified_table += std::to_string(participant.id) // int
         }
 
-        for (auto &[host, participant] : participants->map){
+        for (auto &[host, participant] : participants.map){
             participant.socket->send(stringified_table);
         }
 
         std::cout << stringified_table << std::endl;
         
-        participants->send_table = false;
+        participants.send_table = false;
       }
     }
     else
@@ -213,7 +213,7 @@ void MonitoringService::monitor_peers()
                     .id = identification,
                     .is_manager = false};
         }
-        participants->map.at(machine.hostname) = participant;
+        participants.map.at(machine.hostname) = participant;
       } 
       read = peer.socket->send(client_msg);
     }
