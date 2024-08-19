@@ -7,8 +7,10 @@
 #ifndef NODE_H_
 #define NODE_H_
 
-class MonitoringService; // forward declaration
-class MonitoringService *monitoring_service(class Node* node); // forward declaration
+// forward declarations CIRCULAR REFERENCES ARE PAINFUL
+class MonitoringService; 
+class MonitoringService *monitoring_service(class Node* node); 
+void monitoring_service_start(class MonitoringService *ms);
 
 #include <iostream>
 #include <vector>
@@ -142,14 +144,11 @@ void Node::run_node()
                 std::cin >> cmd;
                 if (string_equals(cmd, "EXIT"))
                 {
-                    // ms.tcp_socket.send("exit");
+                    info.socket->send("exit");
                     exit(EXIT_SUCCESS);
                 }
             }
-            MachineEndpoint server_machine_endpoint;
-            // if (!ms.running && discovery_service.endpoints.dequeue(server_machine_endpoint)) {
-            //     ms.start_client(server_machine_endpoint);
-            // }
+            monitoring_service_start(ms);
         }
         ds.stop();
     }
@@ -253,6 +252,10 @@ void Node::connect_to_peers()
             continue;
         }
     try_connect:
+        pollfd poll_result = socket.poll(POLLIN, 1000);
+        if((poll_result.revents & POLLIN) == 0) {
+            continue;
+        }
         result = socket.connect(participant.machine);
         if (result < 0)
         {

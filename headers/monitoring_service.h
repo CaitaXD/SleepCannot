@@ -63,6 +63,9 @@ struct MonitoringService *monitoring_service(class Node* node) {
   return new MonitoringService{*node};
 }
 
+void monitoring_service_start(class MonitoringService *ms) {
+  ms->start_service();
+}
 
 #ifdef MONITORING_SERVICE_IMPLEMENTATION
 
