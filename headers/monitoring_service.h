@@ -34,6 +34,8 @@
 #include "management.hpp"
 #include "node.hpp"
 
+class Node; // forward declaration
+
 struct MonitoringService
 {
   bool running = {};
@@ -62,6 +64,14 @@ private:
   void collect_file_descriptors();
 };
 
+struct MonitoringService *monitoring_service(class Node* node) {
+  return new MonitoringService{*node};
+}
+
+void monitoring_service_start(class MonitoringService *ms) {
+  ms->start_service();
+}
+
 #ifdef MONITORING_SERVICE_IMPLEMENTATION
 
 std::vector<std::string> splitString(std::string &input, char delimiter) {
@@ -86,7 +96,7 @@ void MonitoringService::start_service()
 
   pthread_create(&thread, NULL, [](void *data) -> void *
                  {
-    StringEqComparerIgnoreCase string_equals;
+    //StringEqComparerIgnoreCase string_equals;
     MonitoringService *m = (MonitoringService *)data;
     Node &node = *m->node;
     ParticipantTable &participants = node.participants;

@@ -7,9 +7,10 @@
 #ifndef NODE_H_
 #define NODE_H_
 
-#define MONITORING_SERVICE_IMPLEMENTATION
-#include "monitoring_service.h"
-#undef MONITORING_SERVICE_IMPLEMENTATION
+// forward declarations CIRCULAR REFERENCES ARE PAINFUL
+class MonitoringService; 
+class MonitoringService *monitoring_service(class Node* node); 
+void monitoring_service_start(class MonitoringService *ms);
 
 #include <iostream>
 #include <vector>
@@ -20,9 +21,7 @@
 #include "macros.h"
 #include "Net/Socket.hpp"
 #include "discovery_service.h"
-//#include "monitoring_service.h"
-
-class MonitoringService; // forward declaration
+#include "monitoring_service.h"
 
 #define INITIAL_ID 1000
 #define CLEAR_SCREEN "\033[2J" // ascii escape code to clear the screen
@@ -41,6 +40,7 @@ public:
     int manager_id = -1;                // id of the manager node
     bool has_started_election = false;
     DiscoveryService ds = {};
+    MonitoringService *ms = monitoring_service(this);
 
     Node(bool is_server);
     ~Node();
@@ -50,18 +50,22 @@ public:
     bool is_manager();
     bool my_self(participant_t &participant);
     int last_id();
-
-private:
-    pthread_t serve_peers_thread = {};
-
     void start_serve_peers(int backlog = 5);
     void connect_to_peers();
+private:
+    pthread_t serve_peers_thread = {};
 };
+
+void node_connect_to_peers(Node* node);
 
 #endif // NODE_H_
 
 #ifndef NODE_IMPLEMENTATION
 #define NODE_IMPLEMENTATION
+
+void node_connect_to_peers(Node* node) {
+  node->connect_to_peers();
+}
 
 Node::Node(bool is_server)
 {
@@ -76,16 +80,21 @@ Node::Node(bool is_server)
 Node::~Node()
 {
     pthread_join(this->serve_peers_thread, NULL);
+    delete this->ms;
 }
+
+// void Node::ms_start(class MonitoringService *ms) {
+//     ms->start_service();
+// }
 
 void Node::run_node()
 {
     StringEqComparerIgnoreCase string_equals;
     start_serve_peers();
+    //this->ms_start(this->ms);
     if (is_manager())
     {
         ds.start_server();
-        // ms.start_server(participants);
 
         help_msg_server();
         participants.print();
@@ -106,7 +115,7 @@ void Node::run_node()
             }
 
             MachineEndpoint discoveredMachine;
-            if (ds.endpoints.dequeue(discoveredMachine))
+            while (ds.endpoints.dequeue(discoveredMachine))
             {
                 auto map = participants.map;
                 if (map.find(discoveredMachine.hostname) != map.end())
@@ -120,11 +129,12 @@ void Node::run_node()
                     .id = last_id() - 1,
                     .is_manager = false});
             }
-
             participants.unlock();
+            connect_to_peers();
             msleep(300); // Let other threads get the GODDAMN MUTEX
         }
         ds.stop();
+        //ms->stop();
     }
     else
     {
@@ -142,16 +152,14 @@ void Node::run_node()
                 std::cin >> cmd;
                 if (string_equals(cmd, "EXIT"))
                 {
-                    // ms.tcp_socket.send("exit");
+                    info.socket->send("exit");
                     exit(EXIT_SUCCESS);
                 }
             }
-            MachineEndpoint server_machine_endpoint;
-            // if (!ms.running && discovery_service.endpoints.dequeue(server_machine_endpoint)) {
-            //     ms.start_client(server_machine_endpoint);
-            // }
+            monitoring_service_start(ms);
         }
         ds.stop();
+        //ms->stop();
     }
 }
 
@@ -203,7 +211,7 @@ void Node::start_serve_peers(int backlog)
         Socket& server_socket = *node->info.socket;
 
         while(true) {
-            int result = 0;
+            //int result = 0;
             participants.lock();
             {
                 if (participants.map.size() == 0) {
@@ -253,6 +261,10 @@ void Node::connect_to_peers()
             continue;
         }
     try_connect:
+        pollfd poll_result = socket.poll(POLLIN, 1000);
+        if((poll_result.revents & POLLIN) == 0) {
+            continue;
+        }
         result = socket.connect(participant.machine);
         if (result < 0)
         {
