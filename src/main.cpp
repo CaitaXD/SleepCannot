@@ -51,37 +51,26 @@
 #undef NODE_IMPLEMENTATION
 
 StringEqComparerIgnoreCase string_equals;
-
 bool is_server = false;
 
-// SIGINT handler for properly exiting the program
-void cleanup(int signum)
+Node *node = NULL;
+void sigpipe_handler(int signum)
 {
   (void)signum;
-  int errno_save = errno;
-  if (is_server)
+  ParticipantTable &participants = node->participants;
+  for (auto &[host, participant] : participants.map)
   {
-    exit(EXIT_FAILURE);
+    if (participant.socket->lasterrno == EPIPE)
+    {
+      participant.socket->close();
+      node->ms->mark_as_deleted(host);
+    }
+    participant.socket->lasterrno = 0;
   }
-  else
-  {
-    signal(signum, SIG_DFL);
-    raise(SIGINT);
-  }
-  errno = errno_save;
-}
-
-
-void close_fd(int sig, siginfo_t *sig_info, void *data) {
-  (void)sig_info;
-  (void)sig;
-  (void)data;
 }
 
 int main(int argc, char **argv)
 {
-  signal(SIGPIPE, SIG_IGN); 
-
   if (argc < 1 || argc > 2)
   {
     printf("Usage: main <manager> if manager else <> for participant\n");
@@ -94,17 +83,13 @@ int main(int argc, char **argv)
 
   is_server = argc > 1 && string_equals(argv[1], "manager");
 
-  struct sigaction sigint;
-  sigint.sa_handler = cleanup;
-  sigint.sa_flags = SA_RESTART;
-  sigaction(SIGINT, &sigint, NULL);
-
   struct sigaction sigpipe;
-  sigpipe.sa_sigaction = close_fd;
+  sigpipe.sa_handler = sigpipe_handler;
+  sigpipe.sa_flags = SA_RESTART;
   sigaction(SIGPIPE, &sigpipe, NULL);
 
-  Node node(is_server);
-  node.run_node();
+  node = std::make_unique<Node>(is_server).release();
+  node->run_node();
 
   return 0;
 }

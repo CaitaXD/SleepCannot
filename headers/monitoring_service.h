@@ -56,13 +56,15 @@ struct MonitoringService
 
   void start_service();
   void stop();
+  void mark_as_deleted(const string &host);
 
 private:
   std::vector<FileDescriptor *> file_descriptors = {};
-  std::vector<string> to_remove = {};
   void monitor_peers();
+  void replicate_table();
   void update_peers_status(time_t timeout = 5);
   void collect_file_descriptors();
+  std::vector<string> to_remove = {};
 };
 
 struct MonitoringService *monitoring_service(class Node *node)
@@ -135,6 +137,11 @@ void MonitoringService::monitor_peers()
   collect_file_descriptors();
   update_peers_status(1);
 
+  if (node->is_manager())
+  {
+    replicate_table();
+  }
+
   auto poll_result = FileDescriptor::poll(file_descriptors, POLLIN, 5000);
   for (auto &poll : poll_result)
   {
@@ -150,80 +157,28 @@ void MonitoringService::monitor_peers()
 
     auto &[perr_name, peer_refrence] = optional_peer.value();
     auto &peer = peer_refrence.get();
-
     string buffer(1024, '\0');
     int read = sock.recv(&buffer);
-    if (errno == EPIPE)
+
+    if (read <= 0)
     {
-      perrorcode("recv");
+      if (read < 0)
+        perrorcode("recv");
+      continue;
+    }
+
+    if (string_equals(buffer, "exit"))
+    {
+      LOGF("Exiting from %s", perr_name.c_str());
+      sock.close();
       to_remove.push_back(perr_name);
       participants.dirty = true;
-      continue;
-    }
-
-    if (read == 0)
-    {
-      continue;
-    }
-
-    if (read < 0)
-    {
-      perrorcode("recv");
       continue;
     }
 
     if (node->is_manager())
     {
       peer.last_conection_timestamp = time(NULL);
-
-      if (string_equals(buffer, "exit"))
-      {
-        to_remove.push_back(perr_name);
-        participants.dirty = true;
-      }
-
-      read = peer.socket->send(server_msg);
-
-      if (errno == EPIPE)
-      {
-        perrorcode("send");
-        to_remove.push_back(perr_name);
-        participants.dirty = true;
-        continue;
-      }
-
-      if (read < 0)
-      {
-        perrorcode("send");
-        continue;
-      }
-
-      // if (participants.send_table)
-      {
-        std::string stringified_table = "BEGIN TABLE\t" + std::to_string(participants.clock) + "\t";
-
-        for (auto &[host, participant] : participants.map)
-        {
-          std::string p_mac_addr(reinterpret_cast<char *>(participant.machine.mac.mac_addr), sizeof(participant.machine.mac.mac_addr)); // unsigned char*
-          stringified_table += p_mac_addr + "\t";
-          std::string p_mac_str(reinterpret_cast<char *>(participant.machine.mac.mac_str), sizeof(participant.machine.mac.mac_str)); // char*
-          stringified_table += p_mac_str + "\t";
-          stringified_table += std::to_string(((sockaddr_in *)&participant.machine.socket_address)->sin_port) + "\t"; // port
-          stringified_table += inet_ntoa(((sockaddr_in *)&participant.machine.socket_address)->sin_addr);             // address
-          stringified_table += "\t" + participant.machine.hostname + "\t";                                            // std::string
-          stringified_table += std::to_string(participant.status) + "\t";                                             // bool
-          stringified_table += std::to_string(participant.last_conection_timestamp) + "\t";                           // time_t
-          stringified_table += std::to_string(participant.id) + "\t";                                                 // int
-        }
-        stringified_table += "END TABLE\t";
-
-        for (auto &[host, participant] : participants.map)
-        {
-          participant.socket->send(stringified_table);
-        }
-
-        participants.send_table = false;
-      }
     }
     else
     {
@@ -280,19 +235,44 @@ void MonitoringService::monitor_peers()
           }
           participants.map[machine.hostname] = participant;
         }
-      }
-      int new_table_size = participants.map.size();
-      if (new_table_size != prev_table_size)
-      {
-        LOGF("New table size %d", new_table_size);
+        int new_table_size = participants.map.size();
+        if (new_table_size != prev_table_size)
+        {
+          LOGF("New table size %d", new_table_size);
+        }
       }
     }
   }
+}
 
-  for (auto host : to_remove)
+void MonitoringService::replicate_table()
+{
+  ParticipantTable &participants = node->participants;
+  participants.lock();
+  std::string stringified_table = "BEGIN TABLE\t" + std::to_string(participants.clock) + "\t";
+
+  for (auto &[host, participant] : participants.map)
   {
-    participants.remove(host);
+    std::string p_mac_addr(reinterpret_cast<char *>(participant.machine.mac.mac_addr), sizeof(participant.machine.mac.mac_addr)); // unsigned char*
+    stringified_table += p_mac_addr + "\t";
+    std::string p_mac_str(reinterpret_cast<char *>(participant.machine.mac.mac_str), sizeof(participant.machine.mac.mac_str)); // char*
+    stringified_table += p_mac_str + "\t";
+    stringified_table += std::to_string(((sockaddr_in *)&participant.machine.socket_address)->sin_port) + "\t"; // port
+    stringified_table += inet_ntoa(((sockaddr_in *)&participant.machine.socket_address)->sin_addr);             // address
+    stringified_table += "\t" + participant.machine.hostname + "\t";                                            // std::string
+    stringified_table += std::to_string(participant.status) + "\t";                                             // bool
+    stringified_table += std::to_string(participant.last_conection_timestamp) + "\t";                           // time_t
+    stringified_table += std::to_string(participant.id) + "\t";                                                 // int
   }
+  stringified_table += "END TABLE\t";
+
+  for (auto &[host, participant] : participants.map)
+  {
+    auto &peersock = *participant.socket;
+    if (peersock.send(stringified_table) < 0)
+      perrorcode("send");
+  }
+  participants.unlock();
 }
 
 void MonitoringService::update_peers_status(time_t timeout)
@@ -302,6 +282,11 @@ void MonitoringService::update_peers_status(time_t timeout)
   participants.lock();
   if (node->is_manager())
   {
+    for (auto host : to_remove)
+    {
+      participants.remove(host);
+      participants.dirty = true;
+    }
     for (auto &[host, participant] : participants.map)
     {
       if (node->my_self(participant))
@@ -329,13 +314,6 @@ void MonitoringService::collect_file_descriptors()
         file_descriptors.push_back(participant.socket.get());
         int result = participant.socket->send(server_msg);
 
-        if (errno == EPIPE)
-        {
-          to_remove.push_back(host);
-          participants.dirty = true;
-          continue;
-        }
-
         if (result < 0)
         {
           perrorcode("send");
@@ -354,6 +332,11 @@ void MonitoringService::stop()
 {
   running = false;
   pthread_join(thread, NULL);
+}
+
+void MonitoringService::mark_as_deleted(const string &host)
+{
+  to_remove.push_back(host);
 }
 
 #endif // MONITORING_SERVICE_IMPLEMENTATION
