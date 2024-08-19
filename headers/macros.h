@@ -67,12 +67,12 @@ static inline string get_hostname()
 #ifdef FUZZ_ENABLE
   #define FUZZ_DELAY \
   do {\
-    if (rand() % 10 == 0) \
+    srand(time(NULL) + getpid());\
+    if (rand() % 100 < 10) \
       {\
-        srand(time(NULL));\
         int fuzz_delay = rand() % 5 + 5;\
         LOGF("Sleeping for %d seconds\n", fuzz_delay);\
-        sleep(rand() % fuzz_delay);\
+        sleep(fuzz_delay);\
         LOG("Woke up\n");\
       }\
   } while (0)
