@@ -7,9 +7,8 @@
 #ifndef NODE_H_
 #define NODE_H_
 
-#define MONITORING_SERVICE_IMPLEMENTATION
-#include "monitoring_service.h"
-#undef MONITORING_SERVICE_IMPLEMENTATION
+class MonitoringService; // forward declaration
+class MonitoringService *monitoring_service(class Node* node); // forward declaration
 
 #include <iostream>
 #include <vector>
@@ -20,9 +19,9 @@
 #include "macros.h"
 #include "Net/Socket.hpp"
 #include "discovery_service.h"
-//#include "monitoring_service.h"
+#include "monitoring_service.h"
 
-class MonitoringService; // forward declaration
+
 
 #define INITIAL_ID 1000
 #define CLEAR_SCREEN "\033[2J" // ascii escape code to clear the screen
@@ -41,6 +40,7 @@ public:
     int manager_id = -1;                // id of the manager node
     bool has_started_election = false;
     DiscoveryService ds = {};
+    MonitoringService *ms = monitoring_service(this);
 
     Node(bool is_server);
     ~Node();
@@ -203,7 +203,7 @@ void Node::start_serve_peers(int backlog)
         Socket& server_socket = *node->info.socket;
 
         while(true) {
-            int result = 0;
+            //int result = 0;
             participants.lock();
             {
                 if (participants.map.size() == 0) {

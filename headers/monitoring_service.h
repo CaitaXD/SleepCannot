@@ -29,6 +29,8 @@
 #include "management.hpp"
 #include "node.hpp"
 
+class Node; // forward declaration
+
 struct MonitoringService
 {
   bool running = {};
@@ -57,6 +59,11 @@ private:
   void collect_file_descriptors();
 };
 
+struct MonitoringService *monitoring_service(class Node* node) {
+  return new MonitoringService{*node};
+}
+
+
 #ifdef MONITORING_SERVICE_IMPLEMENTATION
 
 void MonitoringService::start_service()
@@ -67,7 +74,7 @@ void MonitoringService::start_service()
 
   pthread_create(&thread, NULL, [](void *data) -> void *
                  {
-    StringEqComparerIgnoreCase string_equals;
+    //StringEqComparerIgnoreCase string_equals;
     MonitoringService *m = (MonitoringService *)data;
     Node &node = *m->node;
     ParticipantTable &participants = node.participants;
