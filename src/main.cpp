@@ -80,7 +80,7 @@ void close_fd(int sig, siginfo_t *sig_info, void *data) {
 
 int main(int argc, char **argv)
 {
-  //signal(SIGPIPE, SIG_IGN); 
+  signal(SIGPIPE, SIG_IGN); 
 
   if (argc < 1 || argc > 2)
   {

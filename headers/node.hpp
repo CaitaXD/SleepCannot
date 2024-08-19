@@ -54,6 +54,7 @@ public:
     bool my_fd(int fd);
     int last_id();
     void start_serve_peers(int backlog = 5);
+    Socket connect_peer(MachineEndpoint &peer_endpoint);
     std::unordered_map<string, std::tuple<MachineEndpoint, Socket>> connect_to_peers(std::vector<MachineEndpoint> &endpoints);
 
 private:
@@ -99,7 +100,7 @@ void Node::change_manager(int new_manager_id)
 
     if (this->is_manager())
     {
-        //this->ds.stop();
+        // this->ds.stop();
         this->info.is_manager = false;
         this->ds.start_client();
         should_restart = true;
@@ -107,7 +108,7 @@ void Node::change_manager(int new_manager_id)
 
     if (new_manager_id == this->info.id)
     {
-        //this->ds.stop();
+        // this->ds.stop();
         this->info.is_manager = true;
         this->ds.start_server();
         should_restart = true;
@@ -115,7 +116,8 @@ void Node::change_manager(int new_manager_id)
 
     this->manager_id = new_manager_id;
 
-    if (should_restart) this->run_node();
+    if (should_restart)
+        this->run_node();
 }
 
 void Node::run_node()
@@ -150,8 +152,8 @@ void Node::run_node()
             // participants.unlock();
             rsleep(); // Let other threads get the GODDAMN MUTEX
         }
-        //ds.stop();
-        // ms->stop();
+        // ds.stop();
+        //  ms->stop();
     }
     else
     {
@@ -176,11 +178,11 @@ void Node::run_node()
 
             fill_table();
         }
-        //ds.stop();
-        // ms->stop();
+        // ds.stop();
+        //  ms->stop();
     }
 
-    //ds.stop();
+    // ds.stop();
 }
 
 void Node::fill_table()
@@ -216,7 +218,7 @@ void Node::fill_table()
     {
 
         auto &[peer_endpoint, socket] = tuple;
-        wait:
+    wait:
         auto optional_participant = participants.find_by_address(peer_endpoint);
         if (!optional_participant.has_value())
         {
@@ -317,39 +319,43 @@ std::unordered_map<string, std::tuple<MachineEndpoint, Socket>> Node::connect_to
     std::unordered_map<string, std::tuple<MachineEndpoint, Socket>> sockets;
     for (auto &peer_endpoint : endpoints)
     {
-        Socket socket = Socket();
-        int result = socket.open(SocketType::Stream, SocketProtocol::TCP);
-        result |= socket.set_option(SO_REUSEADDR, 1);
-        if (result < 0)
+        Socket socket = connect_peer(peer_endpoint);
+        if (socket.file_descriptor == -1)
         {
-            perrorcode("Node::connect_to_peers");
             continue;
-        }
-    try_connect:
-        LOGF("Attempting to connect to %s", peer_endpoint.to_string().c_str());
-        result = socket.connect(peer_endpoint.with_port(TCP_PORT));
-        if (result < 0)
-        {
-            if (socket.lasterrno == ECONNREFUSED)
-            {
-                LOGF("Connection refused");
-                rsleep();
-                goto try_connect;
-            }
-            perrorcode("Node::connect_to_peers");
-            continue;
-        }
-        else
-        {
-            LOGF("Connected to %s", peer_endpoint.to_string().c_str());
         }
         sockets.emplace(peer_endpoint.hostname, std::make_tuple(peer_endpoint, std::move(socket)));
     }
-    if (sockets.size() > 0)
-    {
-        LOGF("Connected to %zu peers", sockets.size());
-    }
     return sockets;
+}
+
+Socket Node::connect_peer(MachineEndpoint &peer_endpoint)
+{
+    if (peer_endpoint == info.machine)
+        return Socket{};
+        
+    Socket socket{};
+    int result = socket.open(SocketType::Stream, SocketProtocol::TCP);
+    result |= socket.set_option(SO_REUSEADDR, 1);
+    if (result < 0)
+    {
+        perrorcode("Node::connect_to_peers");
+        return Socket{};
+    }
+try_connect:
+    result = socket.connect(peer_endpoint.with_port(TCP_PORT));
+    if (result < 0)
+    {
+        if (socket.lasterrno == ECONNREFUSED)
+        {
+            LOGF("Connection refused");
+            rsleep();
+            goto try_connect;
+        }
+        perrorcode("Node::connect_to_peers");
+        return Socket{};
+    }
+    return socket;
 }
 
 bool Node::my_fd(int fd)
