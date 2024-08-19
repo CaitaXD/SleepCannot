@@ -15,6 +15,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <vector>
+#include <iostream>
+#include <sstream>
+#include <string>
 #include <pthread.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -43,6 +46,20 @@ struct MonitoringService
 #endif // MONITORING_SERVICE_H_
 
 #ifdef MONITORING_SERVICE_IMPLEMENTATION
+
+std::vector<std::string> splitString(std::string &input, char delimiter) {
+  std::istringstream stream(input);
+
+  std::string token;
+
+  std::vector<std::string> arr;
+
+  while(std::getline(stream, token, delimiter)){
+    arr.push_back(token);
+  }
+
+  return arr;
+}
 
 void MonitoringService::start_server(ParticipantTable &participants)
 {
@@ -173,7 +190,7 @@ void MonitoringService::start_server(ParticipantTable &participants)
     return NULL; }, this);
 }
 
-void MonitoringService::start_client(const IpEndpoint &server_machine)
+void MonitoringService::start_client(ParticipantTable &participants, const IpEndpoint &server_machine)
 {
   if (running)
   {
@@ -221,6 +238,30 @@ void MonitoringService::start_client(const IpEndpoint &server_machine)
       else if (cmd == "exit") {
         ms->running = false;
         return NULL;
+      }
+      else {
+        char delimiter = '\t';
+        std::vector<std::string> arr = splitString(cmd, delimiter);
+        std::cout << arr.at(0) << std::endl;
+        std::cout << cmd+"test" << std::endl;
+        if (!arr.at(0).compare("table") || !arr.at(0).compare("probe from servertable")){
+            std::cout << "clock: " << arr.at(1) << std::endl;
+            long unsigned int i = 2;
+            while(i < arr.size()) {
+            // add mac_addr (unsigned char*)
+            std::cout << "mac_addr: " << arr.at(i++)  << std::endl;
+            // add mac_str (char*)
+            std::cout << arr.at(i++) << std::endl;
+            // add id_address (idk)
+            std::cout << arr.at(i++) << std::endl;     
+            // add hostname (std::string)
+            std::cout << arr.at(i++) << std::endl;
+            // add status (bool)
+            std::cout << arr.at(i++) << std::endl;
+            // add last_conection_timestamp (time_t)
+            std::cout << arr.at(i++) << std::endl;
+          }
+        } 
       }
     }
     ms->running = false;

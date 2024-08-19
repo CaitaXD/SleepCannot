@@ -34,7 +34,7 @@ string server_msg = "Hello there!";
 
 #define MAC_ADDR_MAX 6
 #define MAC_STR_MAX 64
-#define MAC_ADDRES_FILE "/sys/class/net/eth0/address"
+#define MAC_ADDRES_FILE "/sys/class/net/enp0s3/address"
 
 struct MacAddress
 {
@@ -80,6 +80,7 @@ struct MachineEndpoint : IpEndpoint
 {
     MacAddress mac;
     string hostname;
+    string ip;
 
     MachineEndpoint() : IpEndpoint() {}
     MachineEndpoint(in_addr_t address, int port) : IpEndpoint(address, port) {}
@@ -144,6 +145,8 @@ struct ParticipantTable
     std::unordered_map<string, participant_t, StringHashIgnoreCase, StringEqComparerIgnoreCase> map;
     bool dirty;
     std::mutex sync_root;
+    unsigned int clock;
+    bool send_table;
 
     ParticipantTable();
     ~ParticipantTable();
