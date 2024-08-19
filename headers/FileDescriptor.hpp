@@ -1,3 +1,7 @@
+/*
+  Adpats posix file descriptors to a more c++ like api
+  This implementation does not declare copy constructors to avoid stale file descriptors and unwanted destruction on copies
+*/
 #ifndef FILE_DESCRIPTOR_H_
 #define FILE_DESCRIPTOR_H_
 

@@ -48,6 +48,7 @@
 
 StringEqComparerIgnoreCase string_equals;
 
+// Polls stdin for a key press
 bool key_hit()
 {
   struct timeval tv = {0, 0};
@@ -61,6 +62,7 @@ DiscoveryService discovery_service;
 MonitoringService monitoring_service;
 bool is_server = false;
 
+// SIGINT handler for properly exiting the program
 void cleanup(int signum)
 {
   (void)signum;
@@ -79,7 +81,8 @@ void cleanup(int signum)
   errno = errno_save;
 }
 
-#define CLEAR_SCREEN "\033[2J"
+#define CLEAR_SCREEN "\033[2J" // ascii escape code to clear the screen
+// Server side of the program
 int server()
 {
   ParticipantTable participants;
@@ -101,6 +104,7 @@ int server()
     {
       std::cout << CLEAR_SCREEN << "Manager\n";
       help_msg_server();
+      // send modified table to all clients (backup servers)
       participants.print();
     }
 
@@ -120,6 +124,7 @@ int server()
   return 0;
 }
 
+// Client side of the program
 int client()
 {
   NetworkInterfaceList network_interfaces = NetworkInterfaceList::begin();

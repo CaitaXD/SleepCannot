@@ -1,4 +1,6 @@
-
+/*
+  Linked list implementation of a queue with atomic operations so only one thread can enqueue and dequeue at a time
+*/
 #include <atomic>
 #include <memory>
 

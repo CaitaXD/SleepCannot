@@ -1,3 +1,8 @@
+/*
+  Adpats the posix socket api to a more c++ like api
+  This implementation does not declare copy constructors to avoid stale file descriptors and unwanted destruction on copies
+*/
+
 #ifndef SOCKET_H_
 #define SOCKET_H_
 

@@ -1,3 +1,11 @@
+/*
+  This service is used to discover other services on the local network
+  It used UDP broadcasts to discover other services
+  The client sends a packet containing a header its hostname and its mac address and waits for the server to respond with a header to then collect the endpoint of the server
+*/
+#ifndef DISCOVERY_SERVICE_H_
+#define DISCOVERY_SERVICE_H_
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netdb.h>
@@ -37,6 +45,7 @@ struct DiscoveryService
     void stop();
 };
 
+#endif // DISCOVERY_SERVICE_H_
 #ifdef DISCOVERY_SERVICE_IMPLEMENTATION
 
 void DiscoveryService::start_server()

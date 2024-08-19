@@ -187,7 +187,7 @@ void show_status(const std::unordered_map<string, participant_t> &table, mutex_d
     }
 }
 
-ParticipantTable::ParticipantTable() : map(), dirty(false), sync_root(){};
+ParticipantTable::ParticipantTable() : map(), dirty(false), sync_root(), clock(0), send_table(false){};
 ParticipantTable::~ParticipantTable()
 {
     unlock();
@@ -219,6 +219,7 @@ void ParticipantTable::print()
                     status.c_str(),
                     tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec);
     }
+    std::cout << clock << std::endl;
     std::cout << std::endl;
     dirty = false;
 }
@@ -228,6 +229,8 @@ void ParticipantTable::add(const participant_t &participant)
     auto [_, success] = map.emplace(participant.machine.hostname, participant);
     if (success)
     {
+        clock++;
+        send_table = true;
         dirty = true;
     }
 }
@@ -236,6 +239,8 @@ void ParticipantTable::remove(const std::string &hostname)
 {
     if (map.erase(hostname))
     {
+        clock++;
+        send_table = true;
         dirty = true;
     }
 }

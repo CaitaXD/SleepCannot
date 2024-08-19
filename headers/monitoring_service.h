@@ -1,3 +1,9 @@
+/*
+  This service is used to monitor the network for new participants
+  It TCP to exchange messages with the all the participants in the network
+  Once a participant connects it its file descriptor is added to the polling list
+  If a client doesnt respond for a while it is considered as sleeping if a client sends the exit command or exits via SIG_INT it gets removed from the table
+*/
 #ifndef MONITORING_SERVICE_H_
 #define MONITORING_SERVICE_H_
 
@@ -130,6 +136,29 @@ void MonitoringService::start_server(ParticipantTable &participants)
         }
       }
 
+      if(ms->participants->send_table){
+        std::string stringified_table = "table\t"+std::to_string(ms->participants->clock)+"\t";
+
+        for (auto &[host, participant] : ms->participants->map){
+            std::string p_mac_addr(reinterpret_cast<char*>(participant.machine.mac.mac_addr), sizeof(participant.machine.mac.mac_addr)); // unsigned char*
+            stringified_table += p_mac_addr+"\t";
+            std::string p_mac_str(reinterpret_cast<char*>(participant.machine.mac.mac_str), sizeof(participant.machine.mac.mac_str)); // char*
+            stringified_table += p_mac_str+"\t";
+            stringified_table += inet_ntoa(((sockaddr_in *)&participant.machine.socket_address)->sin_addr); // ip (idk the type)
+            stringified_table += "\t"+participant.machine.hostname+"\t"; // std::string
+            stringified_table += std::to_string(participant.status)+"\t";  // bool
+            stringified_table += std::to_string(participant.last_conection_timestamp)+"\t"; // time_t
+        }
+
+        for (auto &[host, participant] : ms->participants->map){
+            participant.socket->send(stringified_table);
+        }
+
+        std::cout << stringified_table << std::endl;
+        
+        ms->participants->send_table = false;
+      }
+
       ms->participants->unlock();
       msleep(300); // Let other threads get the GODDAMN MUTEX
 
@@ -238,30 +267,6 @@ void MonitoringService::start_client(ParticipantTable &participants, const IpEnd
       else if (cmd == "exit") {
         ms->running = false;
         return NULL;
-      }
-      else {
-        char delimiter = '\t';
-        std::vector<std::string> arr = splitString(cmd, delimiter);
-        std::cout << arr.at(0) << std::endl;
-        std::cout << cmd+"test" << std::endl;
-        if (!arr.at(0).compare("table") || !arr.at(0).compare("probe from servertable")){
-            std::cout << "clock: " << arr.at(1) << std::endl;
-            long unsigned int i = 2;
-            while(i < arr.size()) {
-            // add mac_addr (unsigned char*)
-            std::cout << "mac_addr: " << arr.at(i++)  << std::endl;
-            // add mac_str (char*)
-            std::cout << arr.at(i++) << std::endl;
-            // add id_address (idk)
-            std::cout << arr.at(i++) << std::endl;     
-            // add hostname (std::string)
-            std::cout << arr.at(i++) << std::endl;
-            // add status (bool)
-            std::cout << arr.at(i++) << std::endl;
-            // add last_conection_timestamp (time_t)
-            std::cout << arr.at(i++) << std::endl;
-          }
-        } 
       }
     }
     ms->running = false;
