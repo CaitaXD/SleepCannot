@@ -49,6 +49,7 @@ public:
     void fill_table();
     void end_node();
     bool is_manager();
+    void change_manager(int new_manager_id);
     bool my_self(participant_t &participant);
     int last_id();
     void start_serve_peers(int backlog = 5);
@@ -86,9 +87,30 @@ Node::~Node()
     free(this->ms);
 }
 
-// void Node::ms_start(class MonitoringService *ms) {
-//     ms->start_service();
-// }
+void Node::change_manager(int new_manager_id)
+{
+    bool should_restart = false;
+
+    if (this->is_manager())
+    {
+        //this->ds.stop();
+        this->info.is_manager = false;
+        this->ds.start_client();
+        should_restart = true;
+    }
+
+    if (new_manager_id == this->info.id)
+    {
+        //this->ds.stop();
+        this->info.is_manager = true;
+        this->ds.start_server();
+        should_restart = true;
+    }
+
+    this->manager_id = new_manager_id;
+
+    if (should_restart) this->run_node();
+}
 
 void Node::run_node()
 {
@@ -122,7 +144,7 @@ void Node::run_node()
             participants.unlock();
             msleep(300); // Let other threads get the GODDAMN MUTEX
         }
-        ds.stop();
+        //ds.stop();
         //ms->stop();
     }
     else
@@ -149,9 +171,11 @@ void Node::run_node()
             fill_table();
             monitoring_service_start(ms);
         }
-        ds.stop();
+        //ds.stop();
         //ms->stop();
     }
+
+    ds.stop();
 }
 
 void Node::fill_table()
