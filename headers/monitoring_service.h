@@ -64,26 +64,30 @@ private:
   void collect_file_descriptors();
 };
 
-struct MonitoringService *monitoring_service(class Node* node) {
-  MonitoringService* ms = (MonitoringService*)malloc(sizeof(MonitoringService));
-  *ms= MonitoringService{*node};
+struct MonitoringService *monitoring_service(class Node *node)
+{
+  MonitoringService *ms = (MonitoringService *)malloc(sizeof(MonitoringService));
+  *ms = MonitoringService{*node};
   return ms;
 }
 
-void monitoring_service_start(class MonitoringService *ms) {
+void monitoring_service_start(class MonitoringService *ms)
+{
   ms->start_service();
 }
 
 #ifdef MONITORING_SERVICE_IMPLEMENTATION
 
-std::vector<std::string> splitString(std::string &input, char delimiter) {
+std::vector<std::string> splitString(std::string &input, char delimiter)
+{
   std::istringstream stream(input);
 
   std::string token;
 
   std::vector<std::string> arr;
 
-  while(std::getline(stream, token, delimiter)){
+  while (std::getline(stream, token, delimiter))
+  {
     arr.push_back(token);
   }
 
@@ -92,28 +96,30 @@ std::vector<std::string> splitString(std::string &input, char delimiter) {
 
 void MonitoringService::start_service()
 {
+  LOG("Monitoring service started");
   if (running)
     return;
   running = true;
 
   pthread_create(&thread, NULL, [](void *data) -> void *
-                 {
+                 {	
     //StringEqComparerIgnoreCase string_equals;
     MonitoringService *m = (MonitoringService *)data;
     Node &node = *m->node;
     ParticipantTable &participants = node.participants;
     while(m->running) {
-      participants.lock();
+      //participants.lock();
       {
         auto size = participants.map.size();
         if (size == 0) {
-          participants.unlock();
+          //participants.unlock();
+          rsleep(); // Let other threads get the GODDAMN MUTEX
           continue;
         }
         m->monitor_peers();
       }
-      participants.unlock();
-      msleep(300); // Let other threads get the GODDAMN MUTEX
+      //participants.unlock();
+      rsleep(); // Let other threads get the GODDAMN MUTEX
     }
     m->running = false;
     return NULL; }, this);
@@ -131,6 +137,9 @@ void MonitoringService::monitor_peers()
   auto poll_result = FileDescriptor::poll(file_descriptors, POLLIN, 5000);
   for (auto &poll : poll_result)
   {
+    if (node->my_fd(poll.fd))
+      continue;
+
     Socket sock{poll.fd};
     sock.keep_alive = true;
 
@@ -151,6 +160,11 @@ void MonitoringService::monitor_peers()
       continue;
     }
 
+    if (read == 0)
+    {
+      continue;
+    }
+    
     if (read < 0)
     {
       perrorcode("recv");
@@ -159,88 +173,98 @@ void MonitoringService::monitor_peers()
 
     if (node->is_manager())
     {
+      peer.last_conection_timestamp = time(NULL);
+
       if (string_equals(buffer, "exit"))
       {
         to_remove.push_back(perr_name);
         participants.dirty = true;
       }
+
       read = peer.socket->send(server_msg);
-      if(participants.send_table){
-        std::string stringified_table = "table\t"+std::to_string(participants.clock)+"\t";
 
-        for (auto &[host, participant] : participants.map){
-            std::string p_mac_addr(reinterpret_cast<char*>(participant.machine.mac.mac_addr), sizeof(participant.machine.mac.mac_addr)); // unsigned char*
-            stringified_table += p_mac_addr+"\t";
-            std::string p_mac_str(reinterpret_cast<char*>(participant.machine.mac.mac_str), sizeof(participant.machine.mac.mac_str)); // char*
-            stringified_table += p_mac_str+"\t";
-            stringified_table += std::to_string(((sockaddr_in *)&participant.machine.socket_address)->sin_port) + "\t"; // port
-            stringified_table += inet_ntoa(((sockaddr_in *)&participant.machine.socket_address)->sin_addr); // address
-            stringified_table += "\t"+participant.machine.hostname+"\t"; // std::string
-            stringified_table += std::to_string(participant.status)+"\t";  // bool
-            stringified_table += std::to_string(participant.last_conection_timestamp)+"\t"; // time_t
-            stringified_table += std::to_string(participant.id); // int
-        }
-
-        for (auto &[host, participant] : participants.map){
-            participant.socket->send(stringified_table);
-        }
-
-        std::cout << stringified_table << std::endl;
-        
-        participants.send_table = false;
+      if (errno == EPIPE)
+      {
+        perrorcode("send");
+        to_remove.push_back(perr_name);
+        participants.dirty = true;
+        continue;
       }
+
+      if (read < 0)
+      {
+        perrorcode("send");
+        continue;
+      }
+
+      // if (participants.send_table)
+      // {
+      //   std::string stringified_table = "table\t" + std::to_string(participants.clock) + "\t";
+
+      //   for (auto &[host, participant] : participants.map)
+      //   {
+      //     std::string p_mac_addr(reinterpret_cast<char *>(participant.machine.mac.mac_addr), sizeof(participant.machine.mac.mac_addr)); // unsigned char*
+      //     stringified_table += p_mac_addr + "\t";
+      //     std::string p_mac_str(reinterpret_cast<char *>(participant.machine.mac.mac_str), sizeof(participant.machine.mac.mac_str)); // char*
+      //     stringified_table += p_mac_str + "\t";
+      //     stringified_table += std::to_string(((sockaddr_in *)&participant.machine.socket_address)->sin_port) + "\t"; // port
+      //     stringified_table += inet_ntoa(((sockaddr_in *)&participant.machine.socket_address)->sin_addr);             // address
+      //     stringified_table += "\t" + participant.machine.hostname + "\t";                                            // std::string
+      //     stringified_table += std::to_string(participant.status) + "\t";                                             // bool
+      //     stringified_table += std::to_string(participant.last_conection_timestamp) + "\t";                           // time_t
+      //     stringified_table += std::to_string(participant.id);                                                        // int
+      //   }
+
+      //   for (auto &[host, participant] : participants.map)
+      //   {
+      //     participant.socket->send(stringified_table);
+      //   }
+
+      //   std::cout << stringified_table << std::endl;
+
+      //   participants.send_table = false;
+      // }
     }
     else
     {
-      char delimiter = '\t';
-      std::vector<std::string> arr = splitString(buffer, delimiter);
-      if (!arr.at(0).compare("table") || !arr.at(0).compare("probe from servertable")){
-        std::cout << "clock: " << arr.at(1) << std::endl;
-        long unsigned int i = 2;
-        while(i < arr.size()) {
-          participant_t part;
-          MachineEndpoint machine{};
-          memcpy(machine.mac.mac_addr, arr.at(i++).data(), MAC_ADDR_MAX); // add mac_addr (unsigned char*)
-          memcpy(machine.mac.mac_str, arr.at(i++).data(), MAC_STR_MAX); // add mac_str (char*)
-          
-          sockaddr_in ipv4 = {};
-          memset(&ipv4, 0, sizeof(ipv4));
-          ipv4.sin_family = AF_INET;
-          ipv4.sin_port = htons(stoi(arr.at(i++))); // add id_address (idk)
-          ipv4.sin_addr.s_addr = inet_addr(arr.at(i++).c_str()); // add id_address (idk)
+      // char delimiter = '\t';
+      // std::vector<std::string> arr = splitString(buffer, delimiter);
+      // if (!arr.at(0).compare("table") || !arr.at(0).compare("probe from servertable"))
+      // {
+      //   std::cout << "clock: " << arr.at(1) << std::endl;
+      //   long unsigned int i = 2;
+      //   while (i < arr.size())
+      //   {
+      //     participant_t part;
+      //     MachineEndpoint machine{};
+      //     memcpy(machine.mac.mac_addr, arr.at(i++).data(), MAC_ADDR_MAX); // add mac_addr (unsigned char*)
+      //     memcpy(machine.mac.mac_str, arr.at(i++).data(), MAC_STR_MAX);   // add mac_str (char*)
 
-          machine.socket_address = *(sockaddr*)&ipv4;
-          machine.hostname = arr.at(i++); // add hostname (std::string)
-          bool status = stoi(arr.at(i++)) && true; // add status (bool)
-          time_t time_last = stoi(arr.at(i++)); // add last_conection_timestamp (time_t)
-          int identification = stoi(arr.at(i++)); // add identification (int)
+      //     sockaddr_in ipv4 = {};
+      //     memset(&ipv4, 0, sizeof(ipv4));
+      //     ipv4.sin_family = AF_INET;
+      //     ipv4.sin_port = htons(stoi(arr.at(i++)));              // add id_address (idk)
+      //     ipv4.sin_addr.s_addr = inet_addr(arr.at(i++).c_str()); // add id_address (idk)
 
-          participant_t participant = participant_t{
-                    .machine = machine,
-                    .status = status,
-                    .socket = std::make_shared<Socket>(),
-                    .last_conection_timestamp = time_last,
-                    .id = identification,
-                    .is_manager = false};
-          participants.map.at(machine.hostname) = participant;
-        }
-      } 
+      //     machine.socket_address = *(sockaddr *)&ipv4;
+      //     machine.hostname = arr.at(i++);          // add hostname (std::string)
+      //     bool status = stoi(arr.at(i++)) && true; // add status (bool)
+      //     time_t time_last = stoi(arr.at(i++));    // add last_conection_timestamp (time_t)
+      //     int identification = stoi(arr.at(i++));  // add identification (int)
+
+      //     participant_t participant = participant_t{
+      //         .machine = machine,
+      //         .status = status,
+      //         .socket = std::make_shared<Socket>(),
+      //         .last_conection_timestamp = time_last,
+      //         .id = identification,
+      //         .is_manager = false};
+      //     participants.map.at(machine.hostname) = participant;
+      //   }
+      // }
+      FUZZ_DELAY;
       read = peer.socket->send(client_msg);
     }
-
-    if (errno == EPIPE)
-    {
-      to_remove.push_back(perr_name);
-      participants.dirty = true;
-      continue;
-    }
-
-    if (read < 0)
-    {
-      perrorcode("send");
-      continue;
-    }
-    peer.last_conection_timestamp = time(NULL);
   }
 
   for (auto host : to_remove)
@@ -253,17 +277,30 @@ void MonitoringService::update_peers_status(time_t timeout)
 {
   ParticipantTable &participants = node->participants;
   time_t epoch_now = time(NULL);
+  participants.lock();
   if (node->is_manager())
   {
     for (auto &[host, participant] : participants.map)
     {
-      if (node->my_self(participant)) continue;
+      if (node->my_self(participant))
+        continue;
+
       auto elapsed = participant.last_conection_timestamp - epoch_now;
       bool peer_awake = elapsed + timeout >= 0;
-      participants.update_status(host, peer_awake);\
-      std::printf("Host: %s, status: %s\n", host.c_str(), participant.status ? "awake" : "sleeping");
+      participants.update_status(host, peer_awake);
+
+      auto &socket = participants.get(host).socket;
+      if (socket->file_descriptor > -1)
+      {
+        int result = socket->send(server_msg);
+        if (result < 0)
+        {
+          perrorcode("send");
+        }
+      }
     }
   }
+  participants.unlock();
 }
 
 void MonitoringService::collect_file_descriptors()

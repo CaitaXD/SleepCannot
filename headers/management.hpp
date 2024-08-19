@@ -25,6 +25,8 @@ typedef struct mutex_data_t
 
 #define MAXLINE 1024
 #define INITIAL_PORT 35512
+#define DISCOVERY_PORT INITIAL_PORT + 0
+#define TCP_PORT INITIAL_PORT + 1
 
 using string_view = std::string_view;
 using string = std::string;
@@ -34,7 +36,11 @@ string server_msg = "Hello there!";
 
 #define MAC_ADDR_MAX 6
 #define MAC_STR_MAX 64
-#define MAC_ADDRES_FILE "/sys/class/net/enp0s3/address"
+
+const char *mac_paths[] = {
+    "/sys/class/net/eth0/address",
+    "/sys/class/net/enp0s3/address",
+};
 
 struct MacAddress
 {
@@ -50,7 +56,15 @@ struct MacAddress
     {
         MacAddress mac = {};
 
-        FILE *f = fopen(MAC_ADDRES_FILE, "r");
+        FILE *f = NULL;
+        for (size_t i = 0; i < ARRAY_LENGTH(mac_paths); i++)
+        {
+            f = fopen(mac_paths[i], "r");
+            if (f != NULL)
+            {
+                break;
+            }
+        }
         if (f == NULL)
         {
             perror("get_mac");
@@ -162,7 +176,8 @@ struct ParticipantTable
     participant_t &get(const std::string &hostname);
 
     std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_socket(const Socket &socket);
-    std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_address(const MachineEndpoint &address);
+    std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_address(const IpEndpoint &address);
+    std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_id(int id);
 };
 
 #endif // MANAGEMENT_H_
@@ -191,7 +206,7 @@ void show_status(const std::unordered_map<string, participant_t> &table, mutex_d
     }
 }
 
-ParticipantTable::ParticipantTable() : map(), dirty(false), sync_root(), clock(0), send_table(false){};
+ParticipantTable::ParticipantTable() : map(), dirty(false), sync_root(), clock(0), send_table(false) {};
 ParticipantTable::~ParticipantTable()
 {
     unlock();
@@ -282,11 +297,26 @@ std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> Pa
     return std::nullopt;
 }
 
-std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> ParticipantTable::find_by_address(const MachineEndpoint &address)
+std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> ParticipantTable::find_by_address(const IpEndpoint &address)
 {
     for (auto &[host, participant] : map)
     {
-        if (participant.machine == address)
+        sockaddr_in *ipv4_socket_address = (sockaddr_in *)&participant.machine.socket_address;
+        sockaddr_in *peer_ipv4_socket_address = (sockaddr_in *)&address.socket_address;
+        bool sockeq = memcmp(&ipv4_socket_address->sin_addr, &peer_ipv4_socket_address->sin_addr, sizeof(peer_ipv4_socket_address->sin_addr)) == 0;
+        if (sockeq)
+        {
+            return std::make_pair(host, std::reference_wrapper<participant_t>(map.at(host)));
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> ParticipantTable::find_by_id(int id)
+{
+    for (auto &[host, participant] : map)
+    {
+        if (participant.id == id)
         {
             return std::make_pair(host, std::reference_wrapper<participant_t>(map.at(host)));
         }

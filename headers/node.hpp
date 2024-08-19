@@ -50,6 +50,7 @@ public:
     void end_node();
     bool is_manager();
     bool my_self(participant_t &participant);
+    bool my_fd(int fd);
     int last_id();
     void start_serve_peers(int backlog = 5);
     std::unordered_map<string, std::tuple<MachineEndpoint, Socket>> connect_to_peers(std::vector<MachineEndpoint> &endpoints);
@@ -72,12 +73,17 @@ std::unordered_map<string, std::tuple<MachineEndpoint, Socket>> node_connect_to_
 
 Node::Node(bool is_server)
 {
-    ds.port = INITIAL_PORT + 0;
+    ds.port = DISCOVERY_PORT;
     if (is_server)
     {
         info.id = INITIAL_ID;
         manager_id = info.id;
     }
+    info.socket = std::make_shared<Socket>();
+    info.is_manager = is_server;
+    info.status = true;
+    info.last_conection_timestamp = time(NULL);
+    info.machine = MachineEndpoint::MyMachine(AddressFamily::InterNetwork, TCP_PORT);
 }
 
 Node::~Node()
@@ -94,7 +100,7 @@ void Node::run_node()
 {
     StringEqComparerIgnoreCase string_equals;
     start_serve_peers();
-    //this->ms_start(this->ms);
+    monitoring_service_start(ms);
     if (is_manager())
     {
         ds.start_server();
@@ -104,7 +110,7 @@ void Node::run_node()
 
         while (is_manager())
         {
-            participants.lock();
+            // participants.lock();
             if (key_hit())
             {
                 command_exec(participants);
@@ -119,11 +125,11 @@ void Node::run_node()
 
             fill_table();
 
-            participants.unlock();
-            msleep(300); // Let other threads get the GODDAMN MUTEX
+            // participants.unlock();
+            rsleep(); // Let other threads get the GODDAMN MUTEX
         }
         ds.stop();
-        //ms->stop();
+        // ms->stop();
     }
     else
     {
@@ -147,10 +153,9 @@ void Node::run_node()
             }
 
             fill_table();
-            monitoring_service_start(ms);
         }
         ds.stop();
-        //ms->stop();
+        // ms->stop();
     }
 }
 
@@ -158,24 +163,29 @@ void Node::fill_table()
 {
     std::vector<MachineEndpoint> discoveredMachines;
     MachineEndpoint discoveredMachine;
-    
-    while (ds.endpoints.dequeue(discoveredMachine))
+
+    // participants.lock();
     {
-        discoveredMachines.push_back(discoveredMachine);
-        auto map = participants.map;
-        if (map.find(discoveredMachine.hostname) != map.end())
-            continue;
+        while (ds.endpoints.dequeue(discoveredMachine))
+        {
+            LOGF("Discovered machine: %s", discoveredMachine.to_string().c_str());
+            discoveredMachines.push_back(discoveredMachine);
+            auto map = participants.map;
+            if (map.find(discoveredMachine.hostname) != map.end())
+                continue;
 
-        participant_t participant = participant_t{
-            .machine = discoveredMachine,
-            .status = true,
-            .socket = std::make_shared<Socket>(),
-            .last_conection_timestamp = time(NULL),
-            .id = is_manager() ? (last_id() - 1) : (-1),
-            .is_manager = false};
+            participant_t participant = participant_t{
+                .machine = discoveredMachine,
+                .status = true,
+                .socket = std::make_shared<Socket>(Socket{}),
+                .last_conection_timestamp = time(NULL),
+                .id = is_manager() ? (last_id() - 1) : (-1),
+                .is_manager = is_manager()};
 
-        participants.add(participant);
+            participants.add(participant);
+        }
     }
+    // participants.unlock();
 
     auto socks = connect_to_peers(discoveredMachines);
     for (auto &[hostname, tuple] : socks)
@@ -197,20 +207,18 @@ void Node::fill_table()
 
 int Node::last_id()
 {
-    this->participants.lock();
     int last_id = INITIAL_ID;
     for (auto &[host, participant] : this->participants.map)
     {
         if (participant.id < last_id)
             last_id = participant.id;
     }
-    this->participants.unlock();
     return last_id;
 }
 
 bool Node::is_manager()
 {
-    return this->manager_id == this->info.id;
+    return manager_id == info.id;
 }
 
 bool Node::my_self(participant_t &participant)
@@ -230,9 +238,10 @@ void Node::start_serve_peers(int backlog)
     if (socket.file_descriptor == -1)
     {
         result |= socket.open(SocketType::Stream, SocketProtocol::TCP);
-        result |= socket.bind(info.machine);
-        result |= socket.listen(backlog);
         result |= socket.set_option(SO_REUSEADDR, 1);
+        result |= socket.bind(TCP_PORT);
+        result |= socket.listen(backlog);
+        LOGF("Listening on port %d", TCP_PORT);
     }
 
     if (result < 0)
@@ -243,28 +252,26 @@ void Node::start_serve_peers(int backlog)
 
     pthread_create(&serve_peers_thread, NULL, [](void *data) -> void *
                    {
+        LOGF("Node::serve_peers_thread started");
         Node *node = (Node *)data;
         ParticipantTable &participants = node->participants;
         Socket& server_socket = *node->info.socket;
 
         while(true) {
             //int result = 0;
-            participants.lock();
+            //participants.lock();
             {
-                if (participants.map.size() == 0) {
-                    participants.unlock();
-                    continue;
-                }
-
-                MachineEndpoint peerAddress;
+                IpEndpoint peerAddress;
+                LOGF("Waiting for connection");
                 Socket client_socket = server_socket.accept(peerAddress);
+                LOGF("Connection from %s", peerAddress.to_string().c_str());
                 if (client_socket.lasterrno != 0) {
                     perrorcode("Node::accept");
                     participants.unlock();
                     continue;
                 }
 
-                auto optional_peer = participants.find_by_address(peerAddress);
+                auto optional_peer = participants.find_by_address(peerAddress.with_port(TCP_PORT));
                 if (!optional_peer.has_value()) {
                     std::eprintf("How did we get here?");
                     participants.unlock(); 
@@ -274,8 +281,8 @@ void Node::start_serve_peers(int backlog)
                 auto &[perr_name, peer] = optional_peer.value();
                 *peer.get().socket = std::move(client_socket);
             }
-            participants.unlock();
-            msleep(300); // Let other threads get the GODDAMN MUTEX
+            //participants.unlock();
+            rsleep(); // Let other threads get the GODDAMN MUTEX
         }
 
         return NULL; }, this);
@@ -295,24 +302,35 @@ std::unordered_map<string, std::tuple<MachineEndpoint, Socket>> Node::connect_to
             continue;
         }
     try_connect:
-        pollfd poll_result = socket.poll(POLLIN, 1000);
-        if ((poll_result.revents & POLLIN) == 0)
-        {
-            continue;
-        }
-        result = socket.connect(peer_endpoint);
+        LOGF("Attempting to connect to %s", peer_endpoint.to_string().c_str());
+        result = socket.connect(peer_endpoint.with_port(TCP_PORT));
         if (result < 0)
         {
-            perrorcode("Node::connect_to_peers");
             if (socket.lasterrno == ECONNREFUSED)
             {
+                LOGF("Connection refused");
+                rsleep();
                 goto try_connect;
             }
+            perrorcode("Node::connect_to_peers");
             continue;
+        }
+        else
+        {
+            LOGF("Connected to %s", peer_endpoint.to_string().c_str());
         }
         sockets.emplace(peer_endpoint.hostname, std::make_tuple(peer_endpoint, std::move(socket)));
     }
+    if (sockets.size() > 0)
+    {
+        LOGF("Connected to %zu peers", sockets.size());
+    }
     return sockets;
+}
+
+bool Node::my_fd(int fd)
+{
+    return info.socket->file_descriptor == fd;
 }
 
 #endif // NODE_IMPLEMENTATION

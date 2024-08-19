@@ -52,12 +52,9 @@ struct DiscoveryService
 
 void DiscoveryService::start_server()
 {
-    if (running)
-    {
-        return;
-    }
-
+    if (running) return;
     running = true;
+
     pthread_create(&thread, NULL, [](void *data) -> void *
                    {
         DiscoveryService *ds = (DiscoveryService *)data;
@@ -155,7 +152,7 @@ void DiscoveryService::start_client()
                 perror("send");
                 continue;
             }
-            msleep(100);
+            rsleep();
             MachineEndpoint server_endpoint;
             string recv_buffer;
             int read = client_socket.recv(&client_message, server_endpoint, MSG_DONTWAIT);
