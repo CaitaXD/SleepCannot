@@ -29,6 +29,8 @@ using string = std::string;
 using string_view = std::string_view;
 #define HOSTNAME_LEN 1024
 
+void node_connect_to_peers(Node* node);
+
 struct DiscoveryService
 {
     pthread_t thread = {};

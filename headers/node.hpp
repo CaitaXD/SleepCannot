@@ -52,18 +52,22 @@ public:
     bool is_manager();
     bool my_self(participant_t &participant);
     int last_id();
-
-private:
-    pthread_t serve_peers_thread = {};
-
     void start_serve_peers(int backlog = 5);
     void connect_to_peers();
+private:
+    pthread_t serve_peers_thread = {};
 };
+
+void node_connect_to_peers(Node* node);
 
 #endif // NODE_H_
 
 #ifndef NODE_IMPLEMENTATION
 #define NODE_IMPLEMENTATION
+
+void node_connect_to_peers(Node* node) {
+  node->connect_to_peers();
+}
 
 Node::Node(bool is_server)
 {
