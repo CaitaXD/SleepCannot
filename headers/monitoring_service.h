@@ -65,7 +65,9 @@ private:
 };
 
 struct MonitoringService *monitoring_service(class Node* node) {
-  return new MonitoringService{*node};
+  MonitoringService* ms = (MonitoringService*)malloc(sizeof(MonitoringService));
+  *ms= MonitoringService{*node};
+  return ms;
 }
 
 void monitoring_service_start(class MonitoringService *ms) {
@@ -171,11 +173,12 @@ void MonitoringService::monitor_peers()
             stringified_table += p_mac_addr+"\t";
             std::string p_mac_str(reinterpret_cast<char*>(participant.machine.mac.mac_str), sizeof(participant.machine.mac.mac_str)); // char*
             stringified_table += p_mac_str+"\t";
-            stringified_table += inet_ntoa(((sockaddr_in *)&participant.machine.socket_address)->sin_addr); // ip (idk the type)
+            stringified_table += std::to_string(((sockaddr_in *)&participant.machine.socket_address)->sin_port) + "\t"; // port
+            stringified_table += inet_ntoa(((sockaddr_in *)&participant.machine.socket_address)->sin_addr); // address
             stringified_table += "\t"+participant.machine.hostname+"\t"; // std::string
             stringified_table += std::to_string(participant.status)+"\t";  // bool
             stringified_table += std::to_string(participant.last_conection_timestamp)+"\t"; // time_t
-            stringified_table += std::to_string(participant.id) // int
+            stringified_table += std::to_string(participant.id); // int
         }
 
         for (auto &[host, participant] : participants.map){
@@ -190,7 +193,7 @@ void MonitoringService::monitor_peers()
     else
     {
       char delimiter = '\t';
-      std::vector<std::string> arr = splitString(read, delimiter);
+      std::vector<std::string> arr = splitString(buffer, delimiter);
       if (!arr.at(0).compare("table") || !arr.at(0).compare("probe from servertable")){
         std::cout << "clock: " << arr.at(1) << std::endl;
         long unsigned int i = 2;
@@ -199,11 +202,18 @@ void MonitoringService::monitor_peers()
           MachineEndpoint machine{};
           memcpy(machine.mac.mac_addr, arr.at(i++).data(), MAC_ADDR_MAX); // add mac_addr (unsigned char*)
           memcpy(machine.mac.mac_str, arr.at(i++).data(), MAC_STR_MAX); // add mac_str (char*)
-          machine.socket_address = inet_addr(arr.at(i++)); // add id_address (idk)
+          
+          sockaddr_in ipv4 = {};
+          memset(&ipv4, 0, sizeof(ipv4));
+          ipv4.sin_family = AF_INET;
+          ipv4.sin_port = htons(stoi(arr.at(i++))); // add id_address (idk)
+          ipv4.sin_addr.s_addr = inet_addr(arr.at(i++).c_str()); // add id_address (idk)
+
+          machine.socket_address = *(sockaddr*)&ipv4;
           machine.hostname = arr.at(i++); // add hostname (std::string)
           bool status = stoi(arr.at(i++)) && true; // add status (bool)
           time_t time_last = stoi(arr.at(i++)); // add last_conection_timestamp (time_t)
-          int identification = stoi(arr.at(i++)) // add identification (int)
+          int identification = stoi(arr.at(i++)); // add identification (int)
 
           participant_t participant = participant_t{
                     .machine = machine,
@@ -212,8 +222,8 @@ void MonitoringService::monitor_peers()
                     .last_conection_timestamp = time_last,
                     .id = identification,
                     .is_manager = false};
+          participants.map.at(machine.hostname) = participant;
         }
-        participants.map.at(machine.hostname) = participant;
       } 
       read = peer.socket->send(client_msg);
     }

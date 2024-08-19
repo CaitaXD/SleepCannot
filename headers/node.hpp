@@ -83,7 +83,7 @@ Node::Node(bool is_server)
 Node::~Node()
 {
     pthread_join(this->serve_peers_thread, NULL);
-    delete this->ms;
+    free(this->ms);
 }
 
 // void Node::ms_start(class MonitoringService *ms) {
