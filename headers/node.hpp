@@ -150,7 +150,7 @@ void Node::run_node()
             // participants.unlock();
             rsleep(); // Let other threads get the GODDAMN MUTEX
         }
-        ds.stop();
+        //ds.stop();
         // ms->stop();
     }
     else
@@ -176,11 +176,11 @@ void Node::run_node()
 
             fill_table();
         }
-        ds.stop();
+        //ds.stop();
         // ms->stop();
     }
 
-    ds.stop();
+    //ds.stop();
 }
 
 void Node::fill_table()
@@ -216,12 +216,11 @@ void Node::fill_table()
     {
 
         auto &[peer_endpoint, socket] = tuple;
+        wait:
         auto optional_participant = participants.find_by_address(peer_endpoint);
-
         if (!optional_participant.has_value())
         {
-            std::eprintf("How did we get here?");
-            continue;
+            goto wait;
         }
 
         auto &[perr_name, peer] = optional_participant.value();
@@ -295,10 +294,11 @@ void Node::start_serve_peers(int backlog)
                     continue;
                 }
 
-                auto optional_peer = participants.find_by_address(peerAddress.with_port(TCP_PORT));
+                wait:
+                auto optional_peer = participants.find_by_address(peerAddress);
                 if (!optional_peer.has_value()) {
-                    std::eprintf("How did we get here?");
-                    participants.unlock(); 
+                    goto wait;
+                    //participants.unlock(); 
                     continue;
                 }
 
