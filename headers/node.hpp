@@ -220,6 +220,11 @@ bool Node::my_self(participant_t &participant)
 
 void Node::start_serve_peers(int backlog)
 {
+    if (info.socket == nullptr)
+    {
+        info.socket = std::make_shared<Socket>();
+    }
+
     Socket &socket = *info.socket;
     int result = 0;
     if (socket.file_descriptor == -1)
