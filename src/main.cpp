@@ -56,6 +56,7 @@ bool is_server = false;
 Node *node = NULL;
 void sigpipe_handler(int signum)
 {
+  LOGF("SIGPIPE");
   (void)signum;
   ParticipantTable &participants = node->participants;
   for (auto &[host, participant] : participants.map)
@@ -91,5 +92,7 @@ int main(int argc, char **argv)
   node = std::make_unique<Node>(is_server).release();
   node->run_node();
 
+
+  LOGF("Goodbye");
   return 0;
 }
