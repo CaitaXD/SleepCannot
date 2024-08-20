@@ -74,6 +74,7 @@ public:
     bool should_run_election();       // determined in monitoring service
     bool check_reply_from_election(); // check if there is a reply from election message
     int check_coordinator();          // check if there is a coordinator message and returns its id (or -1 if no coordinator)
+    bool is_election_message(string &buffer);
 
 private:
     pthread_t serve_peers_thread = {};
@@ -422,7 +423,6 @@ void Node::send_election()
 {
     election_answered = false;
     participants.lock();
-    std::vector<FileDescriptor *> fds;
     for (auto &[host, participant] : participants.map)
     {
         if (info.id < participant.id)
@@ -434,58 +434,35 @@ void Node::send_election()
                 perrorcode("send");
                 continue;
             }
-            else
-            {
-                fds.push_back(participant.socket.get());
-            }
         }
     }
-    std::vector<pollfd> poll_result = FileDescriptor::poll(fds, POLLIN, 5000);
-    LOGF("Poll result size %zu", poll_result.size());
-    for (auto &poll : poll_result)
-    {
-        Socket sock = Socket(poll.fd);
-        sock.keep_alive = true;
-        string buffer(1024, '\0');
-        int read = sock.recv(&buffer);
-        if (read < 0)
-        {
-            perrorcode("recv");
-            continue;
-        }
-        handle_election_response(buffer);
-    }
-
     participants.unlock();
+}
+
+bool Node::is_election_message(string &buffer)
+{
+    return buffer[0] == 'E' && (buffer[1] == 'a' || buffer[1] == 'c' || buffer[1] == 'e');
 }
 
 void Node::handle_election_response(string &buffer)
 {
-    // Eleciton
-    if (buffer[0] == 'E' && (buffer[1] == 'a' || buffer[1] == 'c' || buffer[1] == 'e'))
+    LOGF("Election message received %s", buffer.c_str());
+    char type = buffer[1];
+    int id = std::stoi(buffer.substr(2, 3).c_str());
+    switch (type)
     {
-        LOGF("Election message received %s", buffer.c_str());
-        char type = buffer[1];
-        int id = std::stoi(buffer.substr(2, 3).c_str());
-        switch (type)
-        {
-        case 'c':
-            received_coordinator = true;
-            change_manager(id);
-            break;
-        case 'e':
-            answer_election(id);
-            break;
-        case 'a':
-            election_answered = true;
-            break;
-        default:
-            break;
-        }
-    }
-    else
-    {
-        LOGF("Received %s instead of election message", buffer.c_str());
+    case 'c':
+        received_coordinator = true;
+        change_manager(id);
+        break;
+    case 'e':
+        answer_election(id);
+        break;
+    case 'a':
+        election_answered = true;
+        break;
+    default:
+        break;
     }
 }
 

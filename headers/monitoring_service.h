@@ -61,6 +61,7 @@ struct MonitoringService
 private:
   std::vector<FileDescriptor *> file_descriptors = {};
   void monitor_peers();
+  void read_table(string &buffer);
   void replicate_table();
   void update_peers_status(time_t timeout = 5);
   void collect_file_descriptors();
@@ -159,6 +160,7 @@ void MonitoringService::monitor_peers()
     auto &peer = peer_refrence.get();
     string buffer(1024, '\0');
     int read = sock.recv(&buffer);
+    LOGF("BUFFER: %s", buffer.c_str());
 
     if (read <= 0)
     {
@@ -176,28 +178,8 @@ void MonitoringService::monitor_peers()
       continue;
     }
 
-    // // Eleciton
-    // if (buffer[0] == 'E' && (buffer[1] == 'a' || buffer[1] == 'c' || buffer[1] == 'e'))
-    // {
-    //   LOGF("Election message received %s", buffer.c_str());
-    //   char type = buffer[1];
-    //   int id = std::stoi(buffer.substr(2, 3).c_str());
-    //   switch (type)
-    //   {
-    //   case 'c':
-    //     node->received_coordinator = true;
-    //     node->change_manager(id);
-    //     break;
-    //   case 'e':
-    //     node->answer_election(id);
-    //     break;
-    //   case 'a':
-    //     node->election_answered = true;
-    //     break;
-    //   default:
-    //     break;
-    //   }
-    // }
+    if (node->is_election_message(buffer))
+      node->handle_election_response(buffer);
 
     if (node->is_manager())
     {
@@ -209,63 +191,7 @@ void MonitoringService::monitor_peers()
       FUZZ_DELAY;
       read = peer.socket->send(client_msg);
 
-      const char delimiter = '\t';
-      size_t table_start = buffer.rfind("BEGIN TABLE", 0);
-      int prev_table_size = participants.map.size();
-      if (table_start != string::npos)
-      {
-        string table = buffer.substr(table_start);
-        std::vector<string> arr = splitString(table, delimiter);
-        ptrdiff_t end = find(arr.begin(), arr.end(), "END TABLE") - arr.begin();
-        std::span<string> table_span = std::span<string>(arr).subspan(2, end - 2);
-        size_t i = 0;
-        while (i < table_span.size())
-        {
-          participant_t part;
-          MachineEndpoint machine{};
-          memcpy(machine.mac.mac_addr, table_span[i++].data(), MAC_ADDR_MAX); // add mac_addr (unsigned char*)
-          memcpy(machine.mac.mac_str, table_span[i++].data(), MAC_STR_MAX);   // add mac_str (char*)
-
-          sockaddr_in ipv4 = {};
-          memset(&ipv4, 0, sizeof(ipv4));
-          ipv4.sin_family = AF_INET;
-          ipv4.sin_port = htons(stoi(table_span[i++]));              // add id_address (idk)
-          ipv4.sin_addr.s_addr = inet_addr(table_span[i++].c_str()); // add id_address (idk)
-
-          machine.socket_address = *(sockaddr *)&ipv4;
-          machine.hostname = table_span[i++];              // add hostname (std::string)
-          bool status = stoi(table_span[i++]) && true;     // add status (bool)
-          time_t time_last = stoi(table_span[i++]);        // add last_conection_timestamp (time_t)
-          int identification = stoi(table_span[i++]);      // add identification (int)
-          bool is_manager = stoi(table_span[i++]) && true; // add is_manager (bool)
-
-          participant_t participant = participant_t{
-              .machine = machine,
-              .status = status,
-              .socket = std::make_shared<Socket>(),
-              .last_conection_timestamp = time_last,
-              .id = identification,
-              .is_manager = is_manager};
-
-          if (participants.map.find(machine.hostname) == participants.map.end())
-          {
-            LOGF("Adding %s", machine.hostname.c_str());
-            auto sock = node->connect_peer(machine);
-            participant.socket = std::make_shared<Socket>(std::move(sock));
-          }
-          else
-          {
-            auto &sock = *participants.map[machine.hostname].socket;
-            participant.socket = std::make_shared<Socket>(std::move(sock));
-          }
-          participants.map[machine.hostname] = participant;
-        }
-        int new_table_size = participants.map.size();
-        if (new_table_size != prev_table_size)
-        {
-          LOGF("New table size %d", new_table_size);
-        }
-      }
+      read_table(buffer);
     }
   }
 
@@ -284,6 +210,68 @@ void MonitoringService::monitor_peers()
     if (manager.get().last_conection_timestamp < node->info.last_conection_timestamp + TIMEOUT_ELECTION)
     {
       node->run_election();
+    }
+  }
+}
+
+void MonitoringService::read_table(string &buffer)
+{
+  ParticipantTable &participants = node->participants;
+  const char delimiter = '\t';
+  size_t table_start = buffer.rfind("BEGIN TABLE", 0);
+  int prev_table_size = participants.map.size();
+  if (table_start != string::npos)
+  {
+    string table = buffer.substr(table_start);
+    std::vector<string> arr = splitString(table, delimiter);
+    ptrdiff_t end = find(arr.begin(), arr.end(), "END TABLE") - arr.begin();
+    std::span<string> table_span = std::span<string>(arr).subspan(2, end - 2);
+    size_t i = 0;
+    while (i < table_span.size())
+    {
+      participant_t part;
+      MachineEndpoint machine{};
+      memcpy(machine.mac.mac_addr, table_span[i++].data(), MAC_ADDR_MAX); // add mac_addr (unsigned char*)
+      memcpy(machine.mac.mac_str, table_span[i++].data(), MAC_STR_MAX);   // add mac_str (char*)
+
+      sockaddr_in ipv4 = {};
+      memset(&ipv4, 0, sizeof(ipv4));
+      ipv4.sin_family = AF_INET;
+      ipv4.sin_port = htons(stoi(table_span[i++]));              // add id_address (idk)
+      ipv4.sin_addr.s_addr = inet_addr(table_span[i++].c_str()); // add id_address (idk)
+
+      machine.socket_address = *(sockaddr *)&ipv4;
+      machine.hostname = table_span[i++];              // add hostname (std::string)
+      bool status = stoi(table_span[i++]) && true;     // add status (bool)
+      time_t time_last = stoi(table_span[i++]);        // add last_conection_timestamp (time_t)
+      int identification = stoi(table_span[i++]);      // add identification (int)
+      bool is_manager = stoi(table_span[i++]) && true; // add is_manager (bool)
+
+      participant_t participant = participant_t{
+          .machine = machine,
+          .status = status,
+          .socket = std::make_shared<Socket>(),
+          .last_conection_timestamp = time_last,
+          .id = identification,
+          .is_manager = is_manager};
+
+      if (participants.map.find(machine.hostname) == participants.map.end())
+      {
+        LOGF("Adding %s", machine.hostname.c_str());
+        auto sock = node->connect_peer(machine);
+        participant.socket = std::make_shared<Socket>(std::move(sock));
+      }
+      else
+      {
+        auto &sock = *participants.map[machine.hostname].socket;
+        participant.socket = std::make_shared<Socket>(std::move(sock));
+      }
+      participants.map[machine.hostname] = participant;
+    }
+    int new_table_size = participants.map.size();
+    if (new_table_size != prev_table_size)
+    {
+      LOGF("New table size %d", new_table_size);
     }
   }
 }
