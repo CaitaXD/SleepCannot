@@ -187,40 +187,35 @@ void MonitoringService::monitor_peers()
     }
     else
     {
+      FUZZ_DELAY;
+      read = peer.socket->send(client_msg);
+
       size_t table_start = buffer.rfind("BEGIN TABLE", 0);
       if (table_start != string::npos)
       {
         read_table(buffer.substr(table_start));
       }
-      FUZZ_DELAY;
-      read = peer.socket->send(client_msg);
     }
   }
 
-  // if (!node->is_manager() && poll_result.size() == 0)
-  // {
-  //   LOGF("Poll result size %zu looking for manager", poll_result.size());
-  //   auto optional_manager = participants.find_manager();
-  //   if (!optional_manager.has_value())
-  //   {
-  //     LOG("Table does not have a manager");
-  //     node->change_manager(node->info.id);
-  //     return;
-  //   }
+  if (!node->is_manager())
+  {
+    auto optional_manager = participants.find_manager();
+    if (!optional_manager.has_value())
+      return;
 
-  //   auto &[perr_name, manager] = optional_manager.value();
-  //   if (manager.get().last_conection_timestamp < node->info.last_conection_timestamp + TIMEOUT_ELECTION)
-  //   {
-  //     node->run_election();
-  //   }
-  // }
+    auto &[perr_name, manager] = optional_manager.value();
+    if ((time(NULL) - manager.get().last_conection_timestamp) * 1000 >= TIMEOUT_ELECTION)
+    {
+      node->run_election();
+    }
+  }
 }
 
 void MonitoringService::read_table(const string &buffer)
 {
   StringEqComparerIgnoreCase string_equals;
   const char delimiter = '\t';
-  LOGF("Recieved table");
   ParticipantTable &participants = node->participants;
   int prev_table_size = participants.map.size();
   std::vector<string> arr = splitString(buffer, delimiter);
@@ -266,16 +261,16 @@ void MonitoringService::read_table(const string &buffer)
     else
     {
       participants.get_or_add(recieved_machine.hostname, recieved_part);
-      // auto &peersock = participants.get_or_add(recieved_machine.hostname, recieved_part).socket;
-      // if (peersock->file_descriptor == -1)
-      // {
-      //   auto sock = node->connect_peer(recieved_machine); // Client socket
-      //   recieved_part.socket = std::make_shared<Socket>(std::move(sock));
-      // }
-      // else
-      // {
-      //   recieved_part.socket = peersock;
-      // }
+      auto &peersock = participants.get_or_add(recieved_machine.hostname, recieved_part).socket;
+      if (peersock->file_descriptor == -1)
+      {
+        auto sock = node->connect_peer(recieved_machine); // Client socket
+        recieved_part.socket = std::make_shared<Socket>(std::move(sock));
+      }
+      else
+      {
+        recieved_part.socket = peersock;
+      }
     }
   }
   int new_table_size = participants.map.size();

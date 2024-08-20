@@ -528,7 +528,7 @@ restart_election:
     participants.unlock();
     if (highest_id)
     {
-        LOG("Ready to mingle");
+        LOGF("My id is %zu and the boss now", info.id);
         send_coordinator();
         change_manager(info.id);
         has_started_election = false;
