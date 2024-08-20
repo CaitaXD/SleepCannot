@@ -61,7 +61,7 @@ struct MonitoringService
 private:
   std::vector<FileDescriptor *> file_descriptors = {};
   void monitor_peers();
-  void read_table(string &buffer);
+  void read_table(const string &buffer);
   void replicate_table();
   void update_peers_status(time_t timeout = 5);
   void collect_file_descriptors();
@@ -82,7 +82,7 @@ void monitoring_service_start(class MonitoringService *ms)
 
 #ifdef MONITORING_SERVICE_IMPLEMENTATION
 
-std::vector<std::string> splitString(std::string &input, char delimiter)
+std::vector<std::string> splitString(const std::string &input, char delimiter)
 {
   std::istringstream stream(input);
 
@@ -160,7 +160,6 @@ void MonitoringService::monitor_peers()
     auto &peer = peer_refrence.get();
     string buffer(1024, '\0');
     int read = sock.recv(&buffer);
-    LOGF("BUFFER: %s", buffer.c_str());
 
     if (read <= 0)
     {
@@ -188,91 +187,101 @@ void MonitoringService::monitor_peers()
     }
     else
     {
+      size_t table_start = buffer.rfind("BEGIN TABLE", 0);
+      if (table_start != string::npos)
+      {
+        read_table(buffer.substr(table_start));
+      }
       FUZZ_DELAY;
       read = peer.socket->send(client_msg);
-
-      read_table(buffer);
     }
   }
 
-  if (!node->is_manager() && poll_result.size() == 0)
-  {
-    LOGF("Poll result size %zu looking for manager", poll_result.size());
-    auto optional_manager = participants.find_manager();
-    if (!optional_manager.has_value())
-    {
-      LOG("Table does not have a manager");
-      node->change_manager(node->info.id);
-      return;
-    }
+  // if (!node->is_manager() && poll_result.size() == 0)
+  // {
+  //   LOGF("Poll result size %zu looking for manager", poll_result.size());
+  //   auto optional_manager = participants.find_manager();
+  //   if (!optional_manager.has_value())
+  //   {
+  //     LOG("Table does not have a manager");
+  //     node->change_manager(node->info.id);
+  //     return;
+  //   }
 
-    auto &[perr_name, manager] = optional_manager.value();
-    if (manager.get().last_conection_timestamp < node->info.last_conection_timestamp + TIMEOUT_ELECTION)
-    {
-      node->run_election();
-    }
-  }
+  //   auto &[perr_name, manager] = optional_manager.value();
+  //   if (manager.get().last_conection_timestamp < node->info.last_conection_timestamp + TIMEOUT_ELECTION)
+  //   {
+  //     node->run_election();
+  //   }
+  // }
 }
 
-void MonitoringService::read_table(string &buffer)
+void MonitoringService::read_table(const string &buffer)
 {
-  ParticipantTable &participants = node->participants;
+  StringEqComparerIgnoreCase string_equals;
   const char delimiter = '\t';
-  size_t table_start = buffer.rfind("BEGIN TABLE", 0);
+  LOGF("Recieved table");
+  ParticipantTable &participants = node->participants;
   int prev_table_size = participants.map.size();
-  if (table_start != string::npos)
+  std::vector<string> arr = splitString(buffer, delimiter);
+  ptrdiff_t end = find(arr.begin(), arr.end(), "END TABLE") - arr.begin();
+  std::span<string> table_span = std::span<string>(arr).subspan(2, end - 2);
+  size_t i = 0;
+  while (i < table_span.size())
   {
-    string table = buffer.substr(table_start);
-    std::vector<string> arr = splitString(table, delimiter);
-    ptrdiff_t end = find(arr.begin(), arr.end(), "END TABLE") - arr.begin();
-    std::span<string> table_span = std::span<string>(arr).subspan(2, end - 2);
-    size_t i = 0;
-    while (i < table_span.size())
+    participant_t part;
+    MachineEndpoint recieved_machine{};
+    memcpy(recieved_machine.mac.mac_addr, table_span[i++].data(), MAC_ADDR_MAX); // add mac_addr (unsigned char*)
+    memcpy(recieved_machine.mac.mac_str, table_span[i++].data(), MAC_STR_MAX);   // add mac_str (char*)
+    sockaddr_in ipv4 = {};
+    memset(&ipv4, 0, sizeof(ipv4));
+    ipv4.sin_family = AF_INET;
+    ipv4.sin_port = htons(stoi(table_span[i++]));              // add id_address (idk)
+    ipv4.sin_addr.s_addr = inet_addr(table_span[i++].c_str()); // add id_address (idk)
+    recieved_machine.socket_address = *(sockaddr *)&ipv4;
+    recieved_machine.hostname = table_span[i++];     // add hostname (std::string)
+    bool status = stoi(table_span[i++]) && true;     // add status (bool)
+    time_t time_last = stoi(table_span[i++]);        // add last_conection_timestamp (time_t)
+    int identification = stoi(table_span[i++]);      // add identification (int)
+    bool is_manager = stoi(table_span[i++]) && true; // add is_manager (bool)
+
+    participant_t recieved_part = participant_t{
+        .machine = recieved_machine,
+        .status = status,
+        .socket = std::make_shared<Socket>(),
+        .last_conection_timestamp = time_last,
+        .id = identification,
+        .is_manager = is_manager};
+
+    if (string_equals(recieved_machine.hostname, node->info.machine.hostname))
     {
-      participant_t part;
-      MachineEndpoint machine{};
-      memcpy(machine.mac.mac_addr, table_span[i++].data(), MAC_ADDR_MAX); // add mac_addr (unsigned char*)
-      memcpy(machine.mac.mac_str, table_span[i++].data(), MAC_STR_MAX);   // add mac_str (char*)
-
-      sockaddr_in ipv4 = {};
-      memset(&ipv4, 0, sizeof(ipv4));
-      ipv4.sin_family = AF_INET;
-      ipv4.sin_port = htons(stoi(table_span[i++]));              // add id_address (idk)
-      ipv4.sin_addr.s_addr = inet_addr(table_span[i++].c_str()); // add id_address (idk)
-
-      machine.socket_address = *(sockaddr *)&ipv4;
-      machine.hostname = table_span[i++];              // add hostname (std::string)
-      bool status = stoi(table_span[i++]) && true;     // add status (bool)
-      time_t time_last = stoi(table_span[i++]);        // add last_conection_timestamp (time_t)
-      int identification = stoi(table_span[i++]);      // add identification (int)
-      bool is_manager = stoi(table_span[i++]) && true; // add is_manager (bool)
-
-      participant_t participant = participant_t{
-          .machine = machine,
-          .status = status,
-          .socket = std::make_shared<Socket>(),
-          .last_conection_timestamp = time_last,
-          .id = identification,
-          .is_manager = is_manager};
-
-      if (participants.map.find(machine.hostname) == participants.map.end())
-      {
-        LOGF("Adding %s", machine.hostname.c_str());
-        auto sock = node->connect_peer(machine);
-        participant.socket = std::make_shared<Socket>(std::move(sock));
-      }
-      else
-      {
-        auto &sock = *participants.map[machine.hostname].socket;
-        participant.socket = std::make_shared<Socket>(std::move(sock));
-      }
-      participants.map[machine.hostname] = participant;
+      node->info.id = identification;
+      node->info.machine = recieved_machine;
+      node->info.status = status;
+      node->info.last_conection_timestamp = time_last;
+      node->info.is_manager = is_manager;
+      recieved_part.socket = node->info.socket; // Server socket
+      participants.map[recieved_machine.hostname] = recieved_part;
     }
-    int new_table_size = participants.map.size();
-    if (new_table_size != prev_table_size)
+    else
     {
-      LOGF("New table size %d", new_table_size);
+      participants.get_or_add(recieved_machine.hostname, recieved_part);
+      // auto &peersock = participants.get_or_add(recieved_machine.hostname, recieved_part).socket;
+      // if (peersock->file_descriptor == -1)
+      // {
+      //   auto sock = node->connect_peer(recieved_machine); // Client socket
+      //   recieved_part.socket = std::make_shared<Socket>(std::move(sock));
+      // }
+      // else
+      // {
+      //   recieved_part.socket = peersock;
+      // }
     }
+  }
+  int new_table_size = participants.map.size();
+  if (new_table_size != prev_table_size)
+  {
+    LOGF("New table size %d", new_table_size);
   }
 }
 
@@ -300,9 +309,8 @@ void MonitoringService::replicate_table()
 
   for (auto &[host, participant] : participants.map)
   {
-    auto &peersock = *participant.socket;
     FUZZ_DELAY;
-    if (peersock.send(stringified_table) < 0)
+    if (participant.socket->send(stringified_table) < 0)
       perrorcode("send");
   }
   participants.unlock();
@@ -343,15 +351,7 @@ void MonitoringService::collect_file_descriptors()
     {
       if (participant.socket->file_descriptor > -1)
       {
-
         file_descriptors.push_back(participant.socket.get());
-        int result = participant.socket->send(server_msg);
-
-        if (result < 0)
-        {
-          perrorcode("send");
-          continue;
-        }
       }
     }
     else if (participant.socket->file_descriptor > -1)

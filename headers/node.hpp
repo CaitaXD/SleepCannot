@@ -104,7 +104,7 @@ Node::Node(bool is_server)
     info.is_manager = is_server;
     info.status = true;
     info.last_conection_timestamp = time(NULL);
-    info.machine = MachineEndpoint::MyMachine(AddressFamily::InterNetwork, TCP_PORT);
+    info.machine = MachineEndpoint::MyMachine(AddressFamily::InterNetwork, TCP_SERVER_PORT);
 }
 
 Node::~Node()
@@ -155,7 +155,7 @@ restart:
 
             if (participants.dirty)
             {
-                std::cout << CLEAR_SCREEN << "Manager\n";
+                //std::cout << CLEAR_SCREEN << "Manager\n";
                 help_msg_server();
                 participants.print();
             }
@@ -273,9 +273,9 @@ void Node::start_serve_peers(int backlog)
     {
         result |= socket.open(SocketType::Stream, SocketProtocol::TCP);
         result |= socket.set_option(SO_REUSEADDR, 1);
-        result |= socket.bind(TCP_PORT);
+        result |= socket.bind(TCP_SERVER_PORT);
         result |= socket.listen(backlog);
-        LOGF("Listening on port %d", TCP_PORT);
+        LOGF("Listening on port %d", TCP_SERVER_PORT);
     }
 
     if (result < 0)
@@ -352,7 +352,7 @@ Socket Node::connect_peer(MachineEndpoint &peer_endpoint)
         return Socket{};
     }
 try_connect:
-    result = socket.connect(peer_endpoint.with_port(TCP_PORT));
+    result = socket.connect(peer_endpoint.with_port(TCP_SERVER_PORT));
     if (result < 0)
     {
         if (socket.lasterrno == ECONNREFUSED)

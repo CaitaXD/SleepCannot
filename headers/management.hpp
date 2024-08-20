@@ -26,7 +26,8 @@ typedef struct mutex_data_t
 #define MAXLINE 1024
 #define INITIAL_PORT 35512
 #define DISCOVERY_PORT INITIAL_PORT + 0
-#define TCP_PORT INITIAL_PORT + 1
+#define TCP_SERVER_PORT INITIAL_PORT + 1
+#define TCP_CLIENT_PORT INITIAL_PORT + 2
 
 using string_view = std::string_view;
 using string = std::string;
@@ -179,6 +180,8 @@ struct ParticipantTable
     std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_address(const IpEndpoint &address);
     std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_id(int id);
     std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_manager();
+
+    participant_t &get_or_add(const std::string &hostname, const participant_t &participant);
 };
 
 #endif // MANAGEMENT_H_
@@ -335,6 +338,20 @@ std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> Pa
         }
     }
     return std::nullopt;
+}
+
+participant_t &ParticipantTable::get_or_add(const std::string &hostname, const participant_t &participant)
+{
+    auto it = map.find(hostname);
+    if (it == map.end())
+    {
+        auto &ret = map[hostname] = participant;
+        return ret;
+    }
+    else
+    {
+        return it->second;
+    }
 }
 
 #endif // MANAGEMENT_IMPLEMENTATION
