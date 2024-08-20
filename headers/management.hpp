@@ -178,6 +178,7 @@ struct ParticipantTable
     std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_socket(const Socket &socket);
     std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_address(const IpEndpoint &address);
     std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_id(int id);
+    std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_manager();
 };
 
 #endif // MANAGEMENT_H_
@@ -317,6 +318,18 @@ std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> Pa
     for (auto &[host, participant] : map)
     {
         if (participant.id == id)
+        {
+            return std::make_pair(host, std::reference_wrapper<participant_t>(map.at(host)));
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> ParticipantTable::find_manager()
+{
+    for (auto &[host, participant] : map)
+    {
+        if (participant.is_manager)
         {
             return std::make_pair(host, std::reference_wrapper<participant_t>(map.at(host)));
         }

@@ -37,7 +37,7 @@
 namespace Election {
     void run_election(Node& node); // starts election process
     void send_election(Node& node); // sends election message to all participants with higher id
-    void answer_election(Node& node); // answers election message
+    void answer_election(Node& node, int sender_id); // answers election message
     void send_coordinator(Node& node); // sends coordinator message to all participants
     // TODO: implement on monitoring maybe
     bool should_run_election(); // determined in monitoring service
@@ -45,7 +45,7 @@ namespace Election {
     int check_coordinator(Node& node); // check if there is a coordinator message and returns its id (or -1 if no coordinator)
 } 
 
-#endif ELECTION_H_
+#endif // ELECTION_H_
 
 #ifndef ELECTION_IMPLEMENTATION
 #define ELECTION_IMPLEMENTATION
@@ -86,10 +86,18 @@ void Election::answer_election(Node& node, int sender_id) {
     }
 }
 
+int Election::check_coordinator(Node& node) {
+    return 0;
+}
+
+bool Election::check_reply_from_election(Node& node) {
+    return true;
+}
+
 // run in thread
 // Starts election process
 void Election::run_election(Node& node) {
-    restart_election:
+restart_election:
     if (node.has_started_election) return;
     node.has_started_election = true;
     // Sends coordinator message if it has the highest id
@@ -133,4 +141,4 @@ void Election::run_election(Node& node) {
     node.has_started_election = false;
 }
 
-#endif ELECTION_IMPLEMENTATION
+#endif // ELECTION_IMPLEMENTATION

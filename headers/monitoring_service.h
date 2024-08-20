@@ -176,9 +176,33 @@ void MonitoringService::monitor_peers()
       continue;
     }
 
+    // // Eleciton
+    // if (buffer[0] == 'E' && (buffer[1] == 'a' || buffer[1] == 'c' || buffer[1] == 'e'))
+    // {
+    //   LOGF("Election message received %s", buffer.c_str());
+    //   char type = buffer[1];
+    //   int id = std::stoi(buffer.substr(2, 3).c_str());
+    //   switch (type)
+    //   {
+    //   case 'c':
+    //     node->received_coordinator = true;
+    //     node->change_manager(id);
+    //     break;
+    //   case 'e':
+    //     node->answer_election(id);
+    //     break;
+    //   case 'a':
+    //     node->election_answered = true;
+    //     break;
+    //   default:
+    //     break;
+    //   }
+    // }
+
     if (node->is_manager())
     {
       peer.last_conection_timestamp = time(NULL);
+      node->info.last_conection_timestamp = time(NULL);
     }
     else
     {
@@ -209,10 +233,11 @@ void MonitoringService::monitor_peers()
           ipv4.sin_addr.s_addr = inet_addr(table_span[i++].c_str()); // add id_address (idk)
 
           machine.socket_address = *(sockaddr *)&ipv4;
-          machine.hostname = table_span[i++];          // add hostname (std::string)
-          bool status = stoi(table_span[i++]) && true; // add status (bool)
-          time_t time_last = stoi(table_span[i++]);    // add last_conection_timestamp (time_t)
-          int identification = stoi(table_span[i++]);  // add identification (int)
+          machine.hostname = table_span[i++];              // add hostname (std::string)
+          bool status = stoi(table_span[i++]) && true;     // add status (bool)
+          time_t time_last = stoi(table_span[i++]);        // add last_conection_timestamp (time_t)
+          int identification = stoi(table_span[i++]);      // add identification (int)
+          bool is_manager = stoi(table_span[i++]) && true; // add is_manager (bool)
 
           participant_t participant = participant_t{
               .machine = machine,
@@ -220,7 +245,7 @@ void MonitoringService::monitor_peers()
               .socket = std::make_shared<Socket>(),
               .last_conection_timestamp = time_last,
               .id = identification,
-              .is_manager = false};
+              .is_manager = is_manager};
 
           if (participants.map.find(machine.hostname) == participants.map.end())
           {
@@ -243,6 +268,24 @@ void MonitoringService::monitor_peers()
       }
     }
   }
+
+  if (!node->is_manager() && poll_result.size() == 0)
+  {
+    LOGF("Poll result size %zu looking for manager", poll_result.size());
+    auto optional_manager = participants.find_manager();
+    if (!optional_manager.has_value())
+    {
+      LOG("Table does not have a manager");
+      node->change_manager(node->info.id);
+      return;
+    }
+
+    auto &[perr_name, manager] = optional_manager.value();
+    if (manager.get().last_conection_timestamp < node->info.last_conection_timestamp + TIMEOUT_ELECTION)
+    {
+      node->run_election();
+    }
+  }
 }
 
 void MonitoringService::replicate_table()
@@ -263,12 +306,14 @@ void MonitoringService::replicate_table()
     stringified_table += std::to_string(participant.status) + "\t";                                             // bool
     stringified_table += std::to_string(participant.last_conection_timestamp) + "\t";                           // time_t
     stringified_table += std::to_string(participant.id) + "\t";                                                 // int
+    stringified_table += std::to_string(participant.is_manager) + "\t";                                         // bool
   }
   stringified_table += "END TABLE\t";
 
   for (auto &[host, participant] : participants.map)
   {
     auto &peersock = *participant.socket;
+    FUZZ_DELAY;
     if (peersock.send(stringified_table) < 0)
       perrorcode("send");
   }

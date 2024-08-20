@@ -181,6 +181,7 @@ void DiscoveryService::stop()
 {
     running = false;
     pthread_join(thread, NULL);
+    udp_socket.close();
 }
 
 #endif // DISCOVERY_SERVICE_IMPLEMENTATION

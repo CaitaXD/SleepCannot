@@ -7,6 +7,11 @@
 #ifndef NODE_H_
 #define NODE_H_
 
+#define INITIAL_ID 1000
+#define CLEAR_SCREEN "\033[2J"   // ascii escape code to clear the screen
+#define TIMEOUT_ELECTION 2500    // ms
+#define TIMEOUT_COORDINATOR 5000 // ms
+
 // forward declarations CIRCULAR REFERENCES ARE PAINFUL
 class MonitoringService;
 class MonitoringService *monitoring_service(class Node *node);
@@ -39,6 +44,8 @@ public:
     ParticipantTable participants = {}; // every node keeps a copy of the participants table
     int manager_id = -1;                // id of the manager node
     bool has_started_election = false;
+    bool election_answered = false;
+    bool received_coordinator = false;
     DiscoveryService ds = {};
     MonitoringService *ms = monitoring_service(this);
 
@@ -56,6 +63,17 @@ public:
     void start_serve_peers(int backlog = 5);
     Socket connect_peer(MachineEndpoint &peer_endpoint);
     std::unordered_map<string, std::tuple<MachineEndpoint, Socket>> connect_to_peers(std::vector<MachineEndpoint> &endpoints);
+
+    // Election
+    void run_election();  // starts election process
+    void send_election(); // sends election message to all participants with higher id
+    void handle_election_response(string &buffer);
+    void answer_election(int sender_id); // answers election message
+    void send_coordinator();             // sends coordinator message to all participants
+    // TODO: implement on monitoring maybe
+    bool should_run_election();       // determined in monitoring service
+    bool check_reply_from_election(); // check if there is a reply from election message
+    int check_coordinator();          // check if there is a coordinator message and returns its id (or -1 if no coordinator)
 
 private:
     pthread_t serve_peers_thread = {};
@@ -96,28 +114,21 @@ Node::~Node()
 
 void Node::change_manager(int new_manager_id)
 {
-    bool should_restart = false;
-
-    if (this->is_manager())
+    if (is_manager())
     {
-        // this->ds.stop();
-        this->info.is_manager = false;
-        this->ds.start_client();
-        should_restart = true;
+        ds.stop();
+        info.is_manager = false;
+        ds.start_client();
     }
 
-    if (new_manager_id == this->info.id)
+    if (new_manager_id == info.id)
     {
-        // this->ds.stop();
-        this->info.is_manager = true;
-        this->ds.start_server();
-        should_restart = true;
+        ds.stop();
+        info.is_manager = true;
+        ds.start_server();
     }
 
-    this->manager_id = new_manager_id;
-
-    if (should_restart)
-        this->run_node();
+    manager_id = new_manager_id;
 }
 
 void Node::run_node()
@@ -125,6 +136,7 @@ void Node::run_node()
     StringEqComparerIgnoreCase string_equals;
     start_serve_peers();
     monitoring_service_start(ms);
+restart:
     if (is_manager())
     {
         ds.start_server();
@@ -152,8 +164,6 @@ void Node::run_node()
             // participants.unlock();
             rsleep(); // Let other threads get the GODDAMN MUTEX
         }
-        // ds.stop();
-        //  ms->stop();
     }
     else
     {
@@ -178,11 +188,9 @@ void Node::run_node()
 
             fill_table();
         }
-        // ds.stop();
-        //  ms->stop();
     }
-
-    // ds.stop();
+    rsleep();
+    goto restart;
 }
 
 void Node::fill_table()
@@ -333,7 +341,7 @@ Socket Node::connect_peer(MachineEndpoint &peer_endpoint)
 {
     if (peer_endpoint == info.machine)
         return Socket{};
-        
+
     Socket socket{};
     int result = socket.open(SocketType::Stream, SocketProtocol::TCP);
     result |= socket.set_option(SO_REUSEADDR, 1);
@@ -361,6 +369,219 @@ try_connect:
 bool Node::my_fd(int fd)
 {
     return info.socket->file_descriptor == fd;
+}
+
+/*
+    Assumptions:
+    process fails by stopping and returns from failure by restarting.
+    there is a failure detector which detects failed processes.
+    message delivery between processes is reliable.
+    each process knows its own process id and address, and that of every other process.
+    each process has a unique priority number.
+    all processes in the system are fully connected.
+
+    Goals:
+    the process with the highest priority number will be elected as coordinator.
+    there should be only one leader among the processes.
+    all Processes agree on who is the leader.
+
+    Election message format:
+    E<op><id>
+    E: election message
+    op: operation (e for election, a for answer, c for coordinator)
+    id: node id
+*/
+
+string padleft(const string &str, int len, char c = '0')
+{
+    return str + string(len - str.length(), c);
+}
+
+// Send coordinator message to all participants
+void Node::send_coordinator()
+{
+    participants.lock();
+    for (auto &[host, participant] : participants.map)
+    {
+        LOGF("Sending coordinator message to %s", host.c_str());
+        int read = participant.socket->send("Ec" + padleft(std::to_string(info.id), 3));
+        if (read < 0)
+        {
+            perrorcode("send");
+        }
+        if (read == 0)
+        {
+            LOG("No one is listening");
+        }
+    }
+    participants.unlock();
+}
+
+// Send election message to participants with higher id
+void Node::send_election()
+{
+    election_answered = false;
+    participants.lock();
+    std::vector<FileDescriptor *> fds;
+    for (auto &[host, participant] : participants.map)
+    {
+        if (info.id < participant.id)
+        {
+            LOGF("Sending election message to %s", host.c_str());
+            int read = participant.socket->send("Ee" + padleft(std::to_string(info.id), 3));
+            if (read < 0)
+            {
+                perrorcode("send");
+                continue;
+            }
+            else
+            {
+                fds.push_back(participant.socket.get());
+            }
+        }
+    }
+    std::vector<pollfd> poll_result = FileDescriptor::poll(fds, POLLIN, 5000);
+    LOGF("Poll result size %zu", poll_result.size());
+    for (auto &poll : poll_result)
+    {
+        Socket sock = Socket(poll.fd);
+        sock.keep_alive = true;
+        string buffer(1024, '\0');
+        int read = sock.recv(&buffer);
+        if (read < 0)
+        {
+            perrorcode("recv");
+            continue;
+        }
+        handle_election_response(buffer);
+    }
+
+    participants.unlock();
+}
+
+void Node::handle_election_response(string &buffer)
+{
+    // Eleciton
+    if (buffer[0] == 'E' && (buffer[1] == 'a' || buffer[1] == 'c' || buffer[1] == 'e'))
+    {
+        LOGF("Election message received %s", buffer.c_str());
+        char type = buffer[1];
+        int id = std::stoi(buffer.substr(2, 3).c_str());
+        switch (type)
+        {
+        case 'c':
+            received_coordinator = true;
+            change_manager(id);
+            break;
+        case 'e':
+            answer_election(id);
+            break;
+        case 'a':
+            election_answered = true;
+            break;
+        default:
+            break;
+        }
+    }
+    else
+    {
+        LOGF("Received %s instead of election message", buffer.c_str());
+    }
+}
+
+// run in thread (maybe on listen, which might be on monitoring service)
+// Answers election message of lower id node and starts election if it has not started
+void Node::answer_election(int sender_id)
+{
+    if (info.id > sender_id)
+    {
+        participants.lock();
+        for (auto &[host, participant] : participants.map)
+        {
+            if (participant.id != sender_id)
+                continue;
+            LOGF("Answering election message from %s", host.c_str());
+            int read = participant.socket->send("Ea" + padleft(std::to_string(info.id), 3));
+            if (read < 0)
+            {
+                perrorcode("send");
+                continue;
+            }
+            if (!has_started_election)
+                run_election();
+            participants.unlock();
+            return;
+        }
+        participants.unlock();
+    }
+}
+
+int Node::check_coordinator()
+{
+    return 0;
+}
+
+bool Node::check_reply_from_election()
+{
+    return true;
+}
+
+// run in thread
+// Starts election process
+void Node::run_election()
+{
+    LOG("Election started");
+restart_election:
+    if (has_started_election)
+        return;
+    has_started_election = true;
+    // Sends coordinator message if it has the highest id
+    bool highest_id = true;
+    participants.lock();
+    for (auto &[host, participant] : participants.map)
+    {
+        if (!participant.status)
+            continue;
+        if (info.id < participant.id)
+        {
+            highest_id = false;
+            break;
+        }
+    }
+    participants.unlock();
+    if (highest_id)
+    {
+        LOG("Ready to mingle");
+        send_coordinator();
+        change_manager(info.id);
+        has_started_election = false;
+        return;
+    }
+    // Else, send election message to all participants with higher id
+    send_election();
+    // Wait for answers
+    msleep(TIMEOUT_ELECTION);
+    if (election_answered)
+    {
+        msleep(TIMEOUT_COORDINATOR); // waits for coordinator message, if timeout, starts new election
+        if (!received_coordinator)
+        {
+            has_started_election = false;
+            goto restart_election;
+            // run_election(); // might break the universe
+        }
+        else
+        {
+            has_started_election = false;
+        }
+        return;
+    }
+    // If no answer, send coordinator message
+    LOGF("Everyone is dead so i must be the boss");
+    send_coordinator();
+    change_manager(info.id);
+    has_started_election = false;
+    LOG("Election finished");
 }
 
 #endif // NODE_IMPLEMENTATION
