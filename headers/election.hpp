@@ -54,7 +54,7 @@ namespace Election {
 void Election::send_coordinator(Node& node) {
     node.participants.lock();
     for (auto &[host, participant] : node.participants.map) { // might need to use map.at(host) instead of participant
-        participant.socket->send("Ec" + std::to_string(node.info.id));
+        participant.connect_socket->send("Ec" + std::to_string(node.info.id));
     }
     node.participants.unlock();
 }
@@ -64,7 +64,7 @@ void Election::send_election(Node& node) {
     node.participants.lock();
     for (auto &[host, participant] : node.participants.map) { // might need to use map.at(host) instead of participant
         if (node.info.id < participant.id) {
-            participant.socket->send("Ee" + std::to_string(node.info.id));
+            participant.connect_socket->send("Ee" + std::to_string(node.info.id));
         }
     }
     node.participants.unlock();
@@ -77,8 +77,8 @@ void Election::answer_election(Node& node, int sender_id) {
         node.participants.lock();
         for (auto &[host, participant] : node.participants.map) { // might need to use map.at(host) instead of participant
             if (participant.id != sender_id) continue;
-            participant.socket->send("Ea" + std::to_string(node.info.id));
-            if (!node.has_started_election) Election::run_election(node);
+            participant.connect_socket->send("Ea" + std::to_string(node.info.id));
+            if (!node.election_running) Election::run_election(node);
             node.participants.unlock();
             return;
         }
@@ -98,8 +98,8 @@ bool Election::check_reply_from_election(Node& node) {
 // Starts election process
 void Election::run_election(Node& node) {
 restart_election:
-    if (node.has_started_election) return;
-    node.has_started_election = true;
+    if (node.election_running) return;
+    node.election_running = true;
     // Sends coordinator message if it has the highest id
     bool highest_id = true;
     node.participants.lock();
@@ -114,7 +114,7 @@ restart_election:
     if (highest_id) {
         Election::send_coordinator(node);
         node.manager_id = node.info.id;
-        node.has_started_election = false;
+        node.election_running = false;
         return;
     }
     // Else, send election message to all participants with higher id
@@ -125,12 +125,12 @@ restart_election:
         msleep(TIMEOUT_COORDINATOR); // waits for coordinator message, if timeout, starts new election
         int coordinator_id = Election::check_coordinator(node);
         if (coordinator_id == -1) {
-            node.has_started_election = false;
+            node.election_running = false;
             goto restart_election;
             //Election::run_election(node); // might break the universe
         }
         else {
-            node.has_started_election = false;
+            node.election_running = false;
             node.manager_id = coordinator_id; // updates new coordinator
         }
         return;
@@ -138,7 +138,7 @@ restart_election:
     // If no answer, send coordinator message
     Election::send_coordinator(node);
     node.manager_id = node.info.id;
-    node.has_started_election = false;
+    node.election_running = false;
 }
 
 #endif // ELECTION_IMPLEMENTATION

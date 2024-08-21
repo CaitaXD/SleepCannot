@@ -29,7 +29,7 @@ using string = std::string;
 using string_view = std::string_view;
 #define HOSTNAME_LEN 1024
 
-void node_connect_to_peers(Node* node);
+void node_connect_to_peers(Node *node);
 
 struct DiscoveryService
 {
@@ -52,7 +52,8 @@ struct DiscoveryService
 
 void DiscoveryService::start_server()
 {
-    if (running) return;
+    if (running)
+        return;
     running = true;
 
     pthread_create(&thread, NULL, [](void *data) -> void *
@@ -107,7 +108,9 @@ void DiscoveryService::start_server()
                 client_machine.hostname = client_hostname;
     
                 ds->endpoints.enqueue(client_machine);
-                server_socket.send(server_msg, client_machine, MSG_DONTWAIT);
+
+                string server_msg_hostname = server_msg + get_hostname();
+                server_socket.send(server_msg_hostname, client_machine, MSG_DONTWAIT);
             }
         }
         ds->running = false;
@@ -156,15 +159,19 @@ void DiscoveryService::start_client()
             MachineEndpoint server_endpoint;
             string recv_buffer;
             int read = client_socket.recv(&client_message, server_endpoint, MSG_DONTWAIT);
+            
             if (read < 0)
             {
                 continue;
             }
+
             string_view msg = string_view(client_message.data(), read).substr(0, read);
-            if (msg == server_msg)
+            if (msg.rfind(server_msg) == 0)
             {
                 if (ds->endpoints.empty())
                 {
+                    string_view hostname = msg.substr(server_msg.size());
+                    server_endpoint.hostname = hostname;
                     ds->endpoints.enqueue(server_endpoint);
                 }
                 return NULL;

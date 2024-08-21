@@ -126,7 +126,7 @@ monitoring:
     participant_t me{
         .machine = MachineEndpoint::MyMachine(InternetAddress::Any, port),
         .status = true,
-        .socket = socket_ptr,
+        .connect_socket = socket_ptr,
         .last_conection_timestamp = time(NULL),
         .id = 1
     };
@@ -134,7 +134,7 @@ monitoring:
     participant_t server{
         .machine = server_machine,
         .status = false,
-        .socket = socket_ptr,
+        .connect_socket = socket_ptr,
         .last_conection_timestamp = time(NULL),
         .id = 0
     };
@@ -203,7 +203,7 @@ monitoring:
     participant_t me{
         .machine = MachineEndpoint::MyMachine(InternetAddress::Any, port),
         .status = true,
-        .socket = std::make_shared<Socket>(std::move(my_socket)),
+        .connect_socket = std::make_shared<Socket>(std::move(my_socket)),
         .last_conection_timestamp = time(NULL),
         .id = 0
     };
@@ -211,7 +211,7 @@ monitoring:
     participant_t client{
         .machine = client_machine,
         .status = false,
-        .socket = std::make_shared<Socket>(std::move(client_socket)),
+        .connect_socket = std::make_shared<Socket>(std::move(client_socket)),
         .last_conection_timestamp = time(NULL),
         .id = 1
     };

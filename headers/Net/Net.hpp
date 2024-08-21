@@ -66,8 +66,8 @@ namespace Net
   // Represents an internet address (only ipv4 for now)
   struct IpEndpoint
   {
-    socklen_t address_length;
-    sockaddr socket_address;
+    socklen_t address_length = {};
+    sockaddr socket_address = {};
 
     IpEndpoint();
 
@@ -214,10 +214,10 @@ namespace Net
     NetworkInterfaceList(ifaddrs &&addrs) : _ifaddrs(std::addressof(addrs)), free(true) {}
     ~NetworkInterfaceList()
     {
-      if (free)
-      {
-        freeifaddrs(_ifaddrs);
-      }
+      // if (free)
+      // {
+      //   freeifaddrs(_ifaddrs);
+      // }
     }
 
     NetworkInterfaceList &operator=(ifaddrs *pNode)

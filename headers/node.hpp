@@ -27,6 +27,7 @@ void monitoring_service_start(class MonitoringService *ms);
 #include "Net/Socket.hpp"
 #include "discovery_service.h"
 #include "monitoring_service.h"
+#include <condition_variable>
 
 #define INITIAL_ID 1000
 #define CLEAR_SCREEN "\033[2J" // ascii escape code to clear the screen
@@ -37,15 +38,25 @@ struct Message
     char msg;
 };
 
+enum ElectionState
+{
+    NoElection,
+    Running,
+    Overruled,
+};
+
 class Node
 {
 public:
     participant_t info = {};            // info about this node
     ParticipantTable participants = {}; // every node keeps a copy of the participants table
     int manager_id = -1;                // id of the manager node
-    bool has_started_election = false;
+    bool election_running = false;
     bool election_answered = false;
     bool received_coordinator = false;
+    ElectionState election_state = NoElection;
+    int highest_id_in_election = -1;
+    time_t election_start_time = 0;
     DiscoveryService ds = {};
     MonitoringService *ms = monitoring_service(this);
 
@@ -53,7 +64,7 @@ public:
     ~Node();
 
     void run_node();
-    void fill_table();
+    void discovery();
     void end_node();
     bool is_manager();
     void change_manager(int new_manager_id);
@@ -61,9 +72,7 @@ public:
     bool my_fd(int fd);
     int last_id();
     void start_serve_peers(int backlog = 5);
-    Socket connect_peer(MachineEndpoint &peer_endpoint);
-    std::unordered_map<string, std::tuple<MachineEndpoint, Socket>> connect_to_peers(std::vector<MachineEndpoint> &endpoints);
-
+    int connect_peer(participant_t &peer);
     // Election
     void run_election();  // starts election process
     void send_election(); // sends election message to all participants with higher id
@@ -74,7 +83,7 @@ public:
     bool should_run_election();       // determined in monitoring service
     bool check_reply_from_election(); // check if there is a reply from election message
     int check_coordinator();          // check if there is a coordinator message and returns its id (or -1 if no coordinator)
-    bool is_election_message(string &buffer);
+    bool has_election_message(string &buffer);
 
 private:
     pthread_t serve_peers_thread = {};
@@ -87,24 +96,22 @@ void node_connect_to_peers(Node *node);
 #ifndef NODE_IMPLEMENTATION
 #define NODE_IMPLEMENTATION
 
-std::unordered_map<string, std::tuple<MachineEndpoint, Socket>> node_connect_to_peers(Node *node, std::vector<MachineEndpoint> &endpoints)
-{
-    return node->connect_to_peers(endpoints);
-}
-
 Node::Node(bool is_server)
 {
     ds.port = DISCOVERY_PORT;
-    if (is_server)
-    {
-        info.id = INITIAL_ID;
-        manager_id = info.id;
-    }
     info.socket = std::make_shared<Socket>();
     info.is_manager = is_server;
     info.status = true;
     info.last_conection_timestamp = time(NULL);
-    info.machine = MachineEndpoint::MyMachine(AddressFamily::InterNetwork, TCP_SERVER_PORT);
+    info.machine = MachineEndpoint::MyMachine(InternetAddress::Loopback, TCP_SERVER_PORT);
+
+    LOGF("My machine: %s", info.machine.to_string().c_str());
+    if (is_server)
+    {
+        info.id = INITIAL_ID;
+        manager_id = info.id;
+        participants.add(info);
+    }
 }
 
 Node::~Node()
@@ -115,6 +122,16 @@ Node::~Node()
 
 void Node::change_manager(int new_manager_id)
 {
+    auto [old_host, rold_manager] = participants.find_by_id_blocking(manager_id);
+    auto &old_manager = rold_manager.get();
+    old_manager.is_manager = false;
+    participants.map[old_host] = old_manager;
+
+    auto [new_host, rnew_manager] = participants.find_by_id_blocking(new_manager_id);
+    auto &new_manager = rnew_manager.get();
+    new_manager.is_manager = true;
+    participants.map[new_host] = new_manager;
+
     if (is_manager())
     {
         ds.stop();
@@ -129,13 +146,14 @@ void Node::change_manager(int new_manager_id)
         ds.start_server();
     }
 
+    participants.dirty = true;
     manager_id = new_manager_id;
 }
 
 void Node::run_node()
 {
     StringEqComparerIgnoreCase string_equals;
-    start_serve_peers();
+    start_serve_peers(6);
     monitoring_service_start(ms);
 restart:
     if (is_manager())
@@ -155,13 +173,12 @@ restart:
 
             if (participants.dirty)
             {
-                //std::cout << CLEAR_SCREEN << "Manager\n";
+                // std::cout << CLEAR_SCREEN << "Manager\n";
                 help_msg_server();
                 participants.print();
             }
 
-            fill_table();
-
+            discovery();
             // participants.unlock();
             rsleep(); // Let other threads get the GODDAMN MUTEX
         }
@@ -187,62 +204,49 @@ restart:
                 }
             }
 
-            fill_table();
+            discovery();
         }
     }
     rsleep();
     goto restart;
 }
 
-void Node::fill_table()
+void Node::discovery()
 {
-    std::vector<MachineEndpoint> discoveredMachines;
     MachineEndpoint discoveredMachine;
-
-    // participants.lock();
+    while (ds.endpoints.dequeue(discoveredMachine))
     {
-        while (ds.endpoints.dequeue(discoveredMachine))
+        auto map = participants.map;
+        if (map.find(discoveredMachine.hostname) != map.end())
+            continue;
+
+        participant_t participant = participant_t{
+            .machine = discoveredMachine,
+            .status = true,
+            .socket = std::make_shared<Socket>(),
+            .last_conection_timestamp = time(NULL),
+            .id = is_manager() ? (last_id() - 1) : INITIAL_ID,
+            .is_manager = is_manager() == false};
+
+        LOGF("Discovered machine: %s id %d", discoveredMachine.to_string().c_str(), participant.id);
+        participants.add(participant);
+
+        if (!is_manager())
         {
-            LOGF("Discovered machine: %s", discoveredMachine.to_string().c_str());
-            discoveredMachines.push_back(discoveredMachine);
-            auto map = participants.map;
-            if (map.find(discoveredMachine.hostname) != map.end())
-                continue;
-
-            participant_t participant = participant_t{
-                .machine = discoveredMachine,
-                .status = true,
-                .socket = std::make_shared<Socket>(Socket{}),
-                .last_conection_timestamp = time(NULL),
-                .id = is_manager() ? (last_id() - 1) : (-1),
-                .is_manager = is_manager()};
-
-            participants.add(participant);
+            int result = connect_peer(participant);
+            if (result < 0)
+            {
+                perrorcode("Node::discovery");
+                exit(EXIT_FAILURE);
+            }
         }
-    }
-    // participants.unlock();
-
-    auto socks = connect_to_peers(discoveredMachines);
-    for (auto &[hostname, tuple] : socks)
-    {
-
-        auto &[peer_endpoint, socket] = tuple;
-    wait:
-        auto optional_participant = participants.find_by_address(peer_endpoint);
-        if (!optional_participant.has_value())
-        {
-            goto wait;
-        }
-
-        auto &[perr_name, peer] = optional_participant.value();
-        *peer.get().socket = std::move(socket);
     }
 }
 
 int Node::last_id()
 {
     int last_id = INITIAL_ID;
-    for (auto &[host, participant] : this->participants.map)
+    for (auto &[host, participant] : participants.map)
     {
         if (participant.id < last_id)
             last_id = participant.id;
@@ -267,14 +271,14 @@ void Node::start_serve_peers(int backlog)
         info.socket = std::make_shared<Socket>();
     }
 
-    Socket &socket = *info.socket;
+    Socket &server_socket = *info.socket;
     int result = 0;
-    if (socket.file_descriptor == -1)
+    if (server_socket.file_descriptor == -1)
     {
-        result |= socket.open(SocketType::Stream, SocketProtocol::TCP);
-        result |= socket.set_option(SO_REUSEADDR, 1);
-        result |= socket.bind(TCP_SERVER_PORT);
-        result |= socket.listen(backlog);
+        result |= server_socket.open(SocketType::Stream, SocketProtocol::TCP);
+        result |= server_socket.set_option(SO_REUSEADDR, 1);
+        result |= server_socket.bind(TCP_SERVER_PORT);
+        result |= server_socket.listen(backlog);
         LOGF("Listening on port %d", TCP_SERVER_PORT);
     }
 
@@ -292,79 +296,44 @@ void Node::start_serve_peers(int backlog)
         Socket& server_socket = *node->info.socket;
 
         while(true) {
-            //int result = 0;
-            //participants.lock();
+            if (participants.lock_if([](ParticipantTable &p) -> bool { return p.map.size() > 1; }))
             {
-                IpEndpoint peerAddress;
-                LOGF("Waiting for connection");
-                Socket client_socket = server_socket.accept(peerAddress);
-                LOGF("Connection from %s", peerAddress.to_string().c_str());
-                if (client_socket.lasterrno != 0) {
+                IpEndpoint peerAddress = {};
+                Socket peer_client_socket = server_socket.accept(peerAddress);
+                if (peer_client_socket.file_descriptor < 0) {
+                    peer_client_socket.lasterrno = 0;
                     perrorcode("Node::accept");
                     participants.unlock();
                     continue;
                 }
-
-                wait:
-                auto optional_peer = participants.find_by_address(peerAddress);
-                if (!optional_peer.has_value()) {
-                    goto wait;
-                    //participants.unlock(); 
-                    continue;
-                }
-
-                auto &[perr_name, peer] = optional_peer.value();
-                *peer.get().socket = std::move(client_socket);
+                LOGF("Accepted Connection from %s", peerAddress.to_string().c_str());
+                auto [host, peer] = participants.find_by_address_blocking(peerAddress);
+                *peer.get().socket = std::move(peer_client_socket);
+                participants.unlock();
             }
-            //participants.unlock();
             rsleep(); // Let other threads get the GODDAMN MUTEX
         }
 
         return NULL; }, this);
 }
 
-std::unordered_map<string, std::tuple<MachineEndpoint, Socket>> Node::connect_to_peers(std::vector<MachineEndpoint> &endpoints)
+int Node::connect_peer(participant_t &peer)
 {
-    std::unordered_map<string, std::tuple<MachineEndpoint, Socket>> sockets;
-    for (auto &peer_endpoint : endpoints)
-    {
-        Socket socket = connect_peer(peer_endpoint);
-        if (socket.file_descriptor == -1)
-        {
-            continue;
-        }
-        sockets.emplace(peer_endpoint.hostname, std::make_tuple(peer_endpoint, std::move(socket)));
-    }
-    return sockets;
-}
+    if (peer.machine == info.machine)
+        return -1;
 
-Socket Node::connect_peer(MachineEndpoint &peer_endpoint)
-{
-    if (peer_endpoint == info.machine)
-        return Socket{};
+    Socket client_socket;
+    int result = client_socket.open(SocketType::Stream, SocketProtocol::TCP);
+    result |= client_socket.set_option(SO_REUSEADDR, 1);
+    result |= client_socket.connect(peer.machine.with_port(TCP_SERVER_PORT));
 
-    Socket socket{};
-    int result = socket.open(SocketType::Stream, SocketProtocol::TCP);
-    result |= socket.set_option(SO_REUSEADDR, 1);
     if (result < 0)
-    {
-        perrorcode("Node::connect_to_peers");
-        return Socket{};
-    }
-try_connect:
-    result = socket.connect(peer_endpoint.with_port(TCP_SERVER_PORT));
-    if (result < 0)
-    {
-        if (socket.lasterrno == ECONNREFUSED)
-        {
-            LOGF("Connection refused");
-            rsleep();
-            goto try_connect;
-        }
-        perrorcode("Node::connect_to_peers");
-        return Socket{};
-    }
-    return socket;
+        return result;
+
+    LOGF("Connected to %s", peer.machine.with_port(TCP_SERVER_PORT).to_string().c_str());
+
+    *peer.socket = std::move(client_socket);
+    return 0;
 }
 
 bool Node::my_fd(int fd)
@@ -401,33 +370,31 @@ string padleft(const string &str, int len, char c = '0')
 // Send coordinator message to all participants
 void Node::send_coordinator()
 {
-    participants.lock();
+    // participants.lock();
     for (auto &[host, participant] : participants.map)
     {
-        LOGF("Sending coordinator message to %s", host.c_str());
+        if (info.id == participant.id)
+            continue;
+        LOGF("Sending coordinator message to %s id %d", participant.machine.to_string().c_str(), participant.id);
         int read = participant.socket->send("Ec" + padleft(std::to_string(info.id), 3));
         if (read < 0)
         {
             perrorcode("send");
         }
-        if (read == 0)
-        {
-            LOG("No one is listening");
-        }
     }
-    participants.unlock();
+    // participants.unlock();
 }
 
 // Send election message to participants with higher id
 void Node::send_election()
 {
     election_answered = false;
-    participants.lock();
+    // participants.lock();
     for (auto &[host, participant] : participants.map)
     {
         if (info.id < participant.id)
         {
-            LOGF("Sending election message to %s", host.c_str());
+            LOGF("Sending election message to %s id %d", host.c_str(), participant.id);
             int read = participant.socket->send("Ee" + padleft(std::to_string(info.id), 3));
             if (read < 0)
             {
@@ -436,12 +403,15 @@ void Node::send_election()
             }
         }
     }
-    participants.unlock();
+    // participants.unlock();
 }
 
-bool Node::is_election_message(string &buffer)
+bool Node::has_election_message(string &buffer)
 {
-    return buffer[0] == 'E' && (buffer[1] == 'a' || buffer[1] == 'c' || buffer[1] == 'e');
+    size_t idxE = buffer.find("E");
+    if (idxE == string::npos)
+        return false;
+    return buffer[idxE + 1] == 'a' || buffer[idxE + 1] == 'c' || buffer[idxE + 1] == 'e';
 }
 
 void Node::handle_election_response(string &buffer)
@@ -472,7 +442,7 @@ void Node::answer_election(int sender_id)
 {
     if (info.id > sender_id)
     {
-        participants.lock();
+        // participants.lock();
         for (auto &[host, participant] : participants.map)
         {
             if (participant.id != sender_id)
@@ -484,12 +454,12 @@ void Node::answer_election(int sender_id)
                 perrorcode("send");
                 continue;
             }
-            if (!has_started_election)
+            if (!election_running)
                 run_election();
-            participants.unlock();
+            // participants.unlock();
             return;
         }
-        participants.unlock();
+        // participants.unlock();
     }
 }
 
@@ -509,14 +479,15 @@ void Node::run_election()
 {
     LOG("Election started");
 restart_election:
-    if (has_started_election)
+    if (election_running)
         return;
-    has_started_election = true;
+    election_running = true;
     // Sends coordinator message if it has the highest id
     bool highest_id = true;
-    participants.lock();
+    // participants.lock();
     for (auto &[host, participant] : participants.map)
     {
+        LOGF("My id %d, Peer %s id %d", info.id, participant.machine.to_string().c_str(), participant.id);
         if (!participant.status)
             continue;
         if (info.id < participant.id)
@@ -525,15 +496,16 @@ restart_election:
             break;
         }
     }
-    participants.unlock();
+    // participants.unlock();
     if (highest_id)
     {
-        LOGF("My id is %zu and the boss now", info.id);
+        LOGF("My id %d, is the largest", info.id);
         send_coordinator();
         change_manager(info.id);
-        has_started_election = false;
+        election_running = false;
         return;
     }
+    LOGF("My id %d, is not the largest forwarding election message", info.id);
     // Else, send election message to all participants with higher id
     send_election();
     // Wait for answers
@@ -543,13 +515,13 @@ restart_election:
         msleep(TIMEOUT_COORDINATOR); // waits for coordinator message, if timeout, starts new election
         if (!received_coordinator)
         {
-            has_started_election = false;
+            election_running = false;
             goto restart_election;
             // run_election(); // might break the universe
         }
         else
         {
-            has_started_election = false;
+            election_running = false;
         }
         return;
     }
@@ -557,7 +529,7 @@ restart_election:
     LOGF("Everyone is dead so i must be the boss");
     send_coordinator();
     change_manager(info.id);
-    has_started_election = false;
+    election_running = false;
     LOG("Election finished");
 }
 

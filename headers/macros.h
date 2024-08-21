@@ -20,7 +20,7 @@
 
 #define perrorcode(message) perrorcode_(message, __FILE__, __LINE__)
 
-#define eprintf(message, ...) fprintf(stderr, message " [%s:%d]", __FILE__, __LINE__, ##__VA_ARGS__)
+#define eprintf(message, ...) fprintf(stderr, message " [%s:%d]", ##__VA_ARGS__, __FILE__, __LINE__)
 
 static inline void perrorcode_(const char *message, const char *file, int line)
 {
@@ -57,32 +57,36 @@ static inline string get_hostname()
 }
 
 #ifdef LOG_ENABLE
-  #define LOG(message)printf("[LOG] %s [%s:%d]\n", message, __FILE__, __LINE__);
-  #define LOGF(fmt, ...) printf("[LOG] " fmt " [%s:%d]" "\n", ## __VA_ARGS__, __FILE__, __LINE__)
+#define LOG(message) printf("[LOG] %s [%s:%d]\n", message, __FILE__, __LINE__);
+#define LOGF(fmt, ...) printf("[LOG] " fmt " [%s:%d]" \
+                              "\n",                   \
+                              ##__VA_ARGS__, __FILE__, __LINE__)
 #else
-  #define LOG(message)
-  #define LOGF(fmt, ...)
+#define LOG(message)
+#define LOGF(fmt, ...)
 #endif
 
 #ifdef FUZZ_ENABLE
-  #define FUZZ_DELAY \
-  do {\
-    srand(time(NULL) + getpid());\
-    if (rand() % 100 < 10) \
-      {\
-        int fuzz_delay = rand() % 5 + 5;\
-        LOGF("Sleeping for %d seconds\n", fuzz_delay);\
-        sleep(fuzz_delay);\
-        LOG("Woke up\n");\
-      }\
+#define FUZZ_DELAY                                   \
+  do                                                 \
+  {                                                  \
+    srand(time(NULL) + getpid());                    \
+    if (rand() % 100 < 10)                           \
+    {                                                \
+      int fuzz_delay = rand() % 5 + 5;               \
+      LOGF("Sleeping for %d seconds\n", fuzz_delay); \
+      sleep(fuzz_delay);                             \
+      LOG("Woke up\n");                              \
+    }                                                \
   } while (0)
 #else
-  #define FUZZ_DELAY
+#define FUZZ_DELAY
 #endif
 
 #define RSLEEP_MIN 50
 #define RSLEEP_MAX 500
-static void rsleep() {
+static void rsleep()
+{
   int rng = rand() % RSLEEP_MAX + RSLEEP_MIN;
   msleep(rng);
 }

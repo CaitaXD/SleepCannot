@@ -134,7 +134,7 @@ struct MachineEndpoint : IpEndpoint
         sockaddr_in *ipv4_socket_address = (sockaddr_in *)&ep.socket_address;
         bzero(ipv4_socket_address, sizeof(*ipv4_socket_address));
 
-        ep.address_length = sizeof(struct sockaddr_in);
+        ep.address_length = sizeof(sockaddr_in);
         ipv4_socket_address->sin_family = AddressFamily::InterNetwork;
         ipv4_socket_address->sin_addr.s_addr = address.network_order();
         ipv4_socket_address->sin_port = htons(port);
@@ -168,6 +168,7 @@ struct ParticipantTable
     ~ParticipantTable();
 
     void lock();
+    bool lock_if(std::function<bool(ParticipantTable &)> condition);
     void unlock();
     void print();
     void add(const participant_t &participant);
@@ -180,6 +181,9 @@ struct ParticipantTable
     std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_address(const IpEndpoint &address);
     std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_id(int id);
     std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_manager();
+    std::pair<const string, std::reference_wrapper<participant_t>> find_manager_blocking();
+    std::pair<const string, std::reference_wrapper<participant_t>> find_by_address_blocking(const IpEndpoint &address);
+    std::pair<const string, std::reference_wrapper<participant_t>> find_by_id_blocking(int id);
 
     participant_t &get_or_add(const std::string &hostname, const participant_t &participant);
 };
@@ -221,6 +225,18 @@ void ParticipantTable::lock()
     sync_root.lock();
 }
 
+bool ParticipantTable::lock_if(std::function<bool(ParticipantTable &)> condition)
+{
+    lock();
+    bool result = condition(*this);
+    if (!result)
+    {
+        unlock();
+        return false;
+    }
+    return true;
+}
+
 void ParticipantTable::unlock()
 {
     sync_root.unlock();
@@ -229,18 +245,18 @@ void ParticipantTable::unlock()
 void ParticipantTable::print()
 {
     std::cout << "\t\t\t\033[1mManagement Table\033[0m\t\t\t\n";
-    std::cout << "\033[1mHost name\tMac address\t\tIp address\t\tstatus\t\tLast conection\033[0m\n";
+    std::cout << "\033[1mHost name\tMac address\t\tIp address\t\tstatus\t\tLast conection\033[0m\tId\n";
     for (auto [host_name, participant] : map)
     {
         MachineEndpoint machine = participant.machine;
         string status = participant.status ? "awake" : "sleeping";
         struct tm *tm = localtime(&participant.last_conection_timestamp);
-        std::printf("%s\t%s\t%s\t\t%s\t\t%d/%d/%d %d:%d.%d\n",
+        std::printf("%s\t%s\t%s\t\t%s\t\t%d/%d/%d %d:%d.%d\t%d\n",
                     host_name.c_str(),
                     machine.mac.mac_str,
                     inet_ntoa(((sockaddr_in *)&machine.socket_address)->sin_addr),
                     status.c_str(),
-                    tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec);
+                    tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec, participant.id);
     }
     std::cout << clock << std::endl;
     std::cout << std::endl;
@@ -249,7 +265,7 @@ void ParticipantTable::print()
 
 void ParticipantTable::add(const participant_t &participant)
 {
-    string machine_hostname = participant.machine.hostname + ":" + std::to_string(participant.id);
+    string machine_hostname = participant.machine.hostname;
     auto [_, success] = map.emplace(machine_hostname, participant);
     if (success)
     {
@@ -328,6 +344,15 @@ std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> Pa
     return std::nullopt;
 }
 
+std::pair<const string, std::reference_wrapper<participant_t>> ParticipantTable::find_by_id_blocking(int id)
+{
+    auto opt = find_by_id(id);
+    while (!opt.has_value())
+    {
+    }
+    return opt.value();
+}
+
 std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> ParticipantTable::find_manager()
 {
     for (auto &[host, participant] : map)
@@ -352,6 +377,24 @@ participant_t &ParticipantTable::get_or_add(const std::string &hostname, const p
     {
         return it->second;
     }
+}
+
+std::pair<const string, std::reference_wrapper<participant_t>> ParticipantTable::find_by_address_blocking(const IpEndpoint &address)
+{
+    auto opt = find_by_address(address);
+    while (!opt.has_value())
+    {
+    }
+    return opt.value();
+}
+
+std::pair<const string, std::reference_wrapper<participant_t>> ParticipantTable::find_manager_blocking()
+{
+    auto opt = find_manager();
+    while (!opt.has_value())
+    {
+    }
+    return opt.value();
 }
 
 #endif // MANAGEMENT_IMPLEMENTATION

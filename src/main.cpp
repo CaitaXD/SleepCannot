@@ -65,8 +65,8 @@ void sigpipe_handler(int signum)
     {
       participant.socket->close();
       node->ms->mark_as_deleted(host);
+      participant.socket->lasterrno = 0;
     }
-    participant.socket->lasterrno = 0;
   }
 }
 
@@ -91,7 +91,6 @@ int main(int argc, char **argv)
 
   node = std::make_unique<Node>(is_server).release();
   node->run_node();
-
 
   LOGF("Goodbye");
   return 0;

@@ -102,16 +102,16 @@ int Socket::connect(const string &ip, int port)
   server_addr.sin_family = AF_INET;
   server_addr.sin_port = htons(port);
   int inet_pton_result = inet_pton(AF_INET, ip.c_str(), &server_addr.sin_addr);
+  lasterrno = errno;
   if (inet_pton_result <= 0)
   {
-    lasterrno = errno;
     return inet_pton_result;
   }
 
   int connect_result = ::connect(file_descriptor, (struct sockaddr *)&server_addr, sizeof(server_addr));
+  lasterrno = errno;
   if (connect_result < 0)
   {
-    lasterrno = errno;
     return connect_result;
   }
   return connect_result;
@@ -120,9 +120,9 @@ int Socket::connect(const string &ip, int port)
 int Socket::send(const string &payload, int flags)
 {
   int bytes_sent = ::send(file_descriptor, payload.c_str(), payload.size(), flags);
+  lasterrno = errno;
   if (bytes_sent < 0)
   {
-    lasterrno = errno;
     return bytes_sent;
   }
   return bytes_sent;
@@ -132,9 +132,9 @@ int Socket::recv(string *payload, int flags)
 {
   char buffer[1024] = {0};
   int bytesReceived = ::recv(file_descriptor, buffer, 1024, flags);
+  lasterrno = errno;
   if (bytesReceived < 0)
   {
-    lasterrno = errno;
     return bytesReceived;
   }
   *payload = string(buffer, bytesReceived);
@@ -144,9 +144,9 @@ int Socket::recv(string *payload, int flags)
 int Socket::close()
 {
   int close_result = ::close(file_descriptor);
+  lasterrno = errno;
   if (close_result < 0)
   {
-    lasterrno = errno;
     return close_result;
   }
   file_descriptor = -1;
@@ -160,9 +160,9 @@ int Socket::bind(int port)
   server_addr.sin_addr.s_addr = InternetAddress::Any.network_order();
   server_addr.sin_port = htons(port);
   int bind_result = ::bind(file_descriptor, (struct sockaddr *)&server_addr, sizeof(server_addr));
+  lasterrno = errno;
   if (bind_result < 0)
   {
-    lasterrno = errno;
     return bind_result;
   }
   return bind_result;
@@ -175,9 +175,9 @@ int Socket::bind(Address address, int port)
   server_addr.sin_addr.s_addr = address.network_order();
   server_addr.sin_port = htons(port);
   int bind_result = ::bind(file_descriptor, (struct sockaddr *)&server_addr, sizeof(server_addr));
+  lasterrno = errno;
   if (bind_result < 0)
   {
-    lasterrno = errno;
     return bind_result;
   }
   return bind_result;
@@ -186,9 +186,9 @@ int Socket::bind(Address address, int port)
 int Socket::bind(const IpEndpoint &ep)
 {
   int bind_result = ::bind(file_descriptor, (struct sockaddr *)&ep.socket_address, ep.address_length);
+  lasterrno = errno;
   if (bind_result < 0)
   {
-    lasterrno = errno;
     return bind_result;
   }
   return bind_result;
@@ -202,9 +202,9 @@ int Socket::bind(string address, int port)
   ipv4_socket_address.sin_addr.s_addr = inet_addr(address.c_str());
   ipv4_socket_address.sin_port = htons(port);
   int bind_result = ::bind(file_descriptor, (struct sockaddr *)&ipv4_socket_address, sizeof(ipv4_socket_address));
+  lasterrno = errno;
   if (bind_result < 0)
   {
-    lasterrno = errno;
     return bind_result;
   }
   return bind_result;
@@ -213,9 +213,9 @@ int Socket::bind(string address, int port)
 int Socket::listen(int backlog)
 {
   int listen_result = ::listen(file_descriptor, backlog);
+  lasterrno = errno;
   if (listen_result < 0)
   {
-    lasterrno = errno;
     return listen_result;
   }
   return listen_result;
@@ -224,9 +224,9 @@ int Socket::listen(int backlog)
 Socket Socket::accept(IpEndpoint &ep)
 {
   int client_socket = ::accept(file_descriptor, (struct sockaddr *)&ep.socket_address, &ep.address_length);
+  lasterrno = errno;
   if (client_socket < 0)
   {
-    lasterrno = errno;
     return Socket{client_socket};
   }
   return Socket(client_socket);
@@ -236,9 +236,9 @@ int Socket::recv(string *payload, IpEndpoint &ep, int flags)
 {
   char buffer[1024]{};
   int bytes_received = ::recvfrom(file_descriptor, buffer, 1024, flags, &ep.socket_address, &ep.address_length);
+  lasterrno = errno;
   if (bytes_received < 0)
   {
-    lasterrno = errno;
     return bytes_received;
   }
   *payload = string(buffer, bytes_received);
@@ -248,9 +248,9 @@ int Socket::recv(string *payload, IpEndpoint &ep, int flags)
 int Socket::send(const string &payload, const IpEndpoint &ep, int flags)
 {
   int bytes_sent = ::sendto(file_descriptor, payload.c_str(), payload.size(), flags, &ep.socket_address, ep.address_length);
+  lasterrno = errno;
   if (bytes_sent < 0)
   {
-    lasterrno = errno;
     return bytes_sent;
   }
   return bytes_sent;
@@ -259,9 +259,9 @@ int Socket::send(const string &payload, const IpEndpoint &ep, int flags)
 int Socket::connect(const IpEndpoint &ep)
 {
   int connect_result = ::connect(file_descriptor, (struct sockaddr *)&ep.socket_address, ep.address_length);
+  lasterrno = errno;
   if (connect_result < 0)
   {
-    lasterrno = errno;
     return connect_result;
   }
   return connect_result;
