@@ -177,13 +177,13 @@ struct ParticipantTable
 
     participant_t &get(const std::string &hostname);
 
-    std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_socket(const Socket &socket);
-    std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_address(const IpEndpoint &address);
-    std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_by_id(int id);
-    std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> find_manager();
-    std::pair<const string, std::reference_wrapper<participant_t>> find_manager_blocking();
-    std::pair<const string, std::reference_wrapper<participant_t>> find_by_address_blocking(const IpEndpoint &address);
-    std::pair<const string, std::reference_wrapper<participant_t>> find_by_id_blocking(int id);
+    std::optional<participant_t *> find_by_socket(const Socket &socket);
+    std::optional<participant_t *> find_by_address(const IpEndpoint &address);
+    std::optional<participant_t *> find_by_id(int id);
+    std::optional<participant_t *> find_manager();
+    participant_t &find_by_address_blocking(const IpEndpoint &address);
+    participant_t &find_manager_blocking();
+    participant_t &find_by_id_blocking(int id);
 
     participant_t &get_or_add(const std::string &hostname, const participant_t &participant);
 };
@@ -305,19 +305,19 @@ participant_t &ParticipantTable::get(const std::string &hostname)
     return map.at(hostname);
 }
 
-std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> ParticipantTable::find_by_socket(const Socket &socket)
+std::optional<participant_t *> ParticipantTable::find_by_socket(const Socket &socket)
 {
     for (auto &[host, participant] : map)
     {
         if (participant.socket->file_descriptor == socket.file_descriptor)
         {
-            return std::make_pair(host, std::reference_wrapper<participant_t>(map.at(host)));
+            return std::addressof(map.at(host));
         }
     }
     return std::nullopt;
 }
 
-std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> ParticipantTable::find_by_address(const IpEndpoint &address)
+std::optional<participant_t *> ParticipantTable::find_by_address(const IpEndpoint &address)
 {
     for (auto &[host, participant] : map)
     {
@@ -326,40 +326,40 @@ std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> Pa
         bool sockeq = memcmp(&ipv4_socket_address->sin_addr, &peer_ipv4_socket_address->sin_addr, sizeof(peer_ipv4_socket_address->sin_addr)) == 0;
         if (sockeq)
         {
-            return std::make_pair(host, std::reference_wrapper<participant_t>(map.at(host)));
+            return std::addressof(map.at(host));
         }
     }
     return std::nullopt;
 }
 
-std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> ParticipantTable::find_by_id(int id)
+std::optional<participant_t *> ParticipantTable::find_by_id(int id)
 {
     for (auto &[host, participant] : map)
     {
         if (participant.id == id)
         {
-            return std::make_pair(host, std::reference_wrapper<participant_t>(map.at(host)));
+            return std::addressof(map.at(host));
         }
     }
     return std::nullopt;
 }
 
-std::pair<const string, std::reference_wrapper<participant_t>> ParticipantTable::find_by_id_blocking(int id)
+participant_t &ParticipantTable::find_by_id_blocking(int id)
 {
     auto opt = find_by_id(id);
     while (!opt.has_value())
     {
     }
-    return opt.value();
+    return *opt.value();
 }
 
-std::optional<std::pair<const string, std::reference_wrapper<participant_t>>> ParticipantTable::find_manager()
+std::optional<participant_t *> ParticipantTable::find_manager()
 {
     for (auto &[host, participant] : map)
     {
         if (participant.is_manager)
         {
-            return std::make_pair(host, std::reference_wrapper<participant_t>(map.at(host)));
+            return std::addressof(map.at(host));
         }
     }
     return std::nullopt;
@@ -379,22 +379,22 @@ participant_t &ParticipantTable::get_or_add(const std::string &hostname, const p
     }
 }
 
-std::pair<const string, std::reference_wrapper<participant_t>> ParticipantTable::find_by_address_blocking(const IpEndpoint &address)
+participant_t &ParticipantTable::find_by_address_blocking(const IpEndpoint &address)
 {
     auto opt = find_by_address(address);
     while (!opt.has_value())
     {
     }
-    return opt.value();
+    return *opt.value();
 }
 
-std::pair<const string, std::reference_wrapper<participant_t>> ParticipantTable::find_manager_blocking()
+participant_t &ParticipantTable::find_manager_blocking()
 {
     auto opt = find_manager();
     while (!opt.has_value())
     {
     }
-    return opt.value();
+    return *opt.value();
 }
 
 #endif // MANAGEMENT_IMPLEMENTATION

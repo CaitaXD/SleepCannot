@@ -122,15 +122,11 @@ Node::~Node()
 
 void Node::change_manager(int new_manager_id)
 {
-    auto [old_host, rold_manager] = participants.find_by_id_blocking(manager_id);
-    auto &old_manager = rold_manager.get();
+    auto &old_manager = participants.find_by_id_blocking(manager_id);
     old_manager.is_manager = false;
-    participants.map[old_host] = old_manager;
 
-    auto [new_host, rnew_manager] = participants.find_by_id_blocking(new_manager_id);
-    auto &new_manager = rnew_manager.get();
+    auto &new_manager = participants.find_by_id_blocking(new_manager_id);
     new_manager.is_manager = true;
-    participants.map[new_host] = new_manager;
 
     if (is_manager())
     {
@@ -307,8 +303,8 @@ void Node::start_serve_peers(int backlog)
                     continue;
                 }
                 LOGF("Accepted Connection from %s", peerAddress.to_string().c_str());
-                auto [host, peer] = participants.find_by_address_blocking(peerAddress);
-                *peer.get().socket = std::move(peer_client_socket);
+                auto &peer = participants.find_by_address_blocking(peerAddress);
+                *peer.socket = std::move(peer_client_socket);
                 participants.unlock();
             }
             rsleep(); // Let other threads get the GODDAMN MUTEX

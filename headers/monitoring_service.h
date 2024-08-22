@@ -123,6 +123,12 @@ void MonitoringService::start_service()
     return NULL; }, this);
 }
 
+const char MSG_ELECTION[] = "ELECTION";
+const char MSG_OVERRULED[] = "OVERULED";
+const char MSG_OBEY[] = "OBEY";
+const char MSG_ACK[] = "ACK";
+const char MSG_BEGIN_TABLE[] = "BEGIN TABLE";
+
 void MonitoringService::monitor_peers()
 {
   const auto other_peers = [&](participant_t &peer) -> bool
@@ -137,80 +143,28 @@ void MonitoringService::monitor_peers()
   {
     return peer.id < node->info.id;
   };
-  const char MSG_ELECTION[] = "ELECTION";
-  const char MSG_OVERRULED[] = "OVERULED";
-  const char MSG_OBEY[] = "OBEY";
-  const char MSG_ACK[] = "ACK";
-  const char MSG_BEGIN_TABLE[] = "BEGIN TABLE";
+  const auto am_manager = [&](participant_t &peer) -> bool
+  {
+    return node->is_manager() && !node->my_self(peer);
+  };
+  const auto to_manager = [&](participant_t &peer) -> bool
+  {
+    return peer.is_manager && !node->my_self(peer);
+  };
+
   ParticipantTable &participants = node->participants;
-
   collect_file_descriptors();
-  if (node->is_manager())
-  {
-    auto &info = node->info;
-    info.last_conection_timestamp = time(NULL);
-    participants.map[node->info.machine.hostname] = info;
-    update_peers_status(1);
-    send_msg_if(serialize_table(), other_peers);
-  }
-  else
-  {
-    switch (node->election_state)
-    {
-    case ElectionState::NoElection:
-    {
-      auto optional_manager = participants.find_manager();
-      if (!optional_manager.has_value())
-        return;
-      auto &manager = optional_manager.value().second.get();
-
-      manager.socket->send(client_msg);
-
-      auto elapsed_s = time(NULL) - manager.last_conection_timestamp;
-      bool manager_timeout = (1000 * elapsed_s) >= 10000;
-      if (manager_timeout)
-      {
-        node->election_start_time = time(NULL);
-        LOGF("Manager %d not responding elapsed %d", manager.id, (int)(time(NULL) - manager.last_conection_timestamp));
-        node->election_state = ElectionState::Running;
-        send_msg_if(MSG_ELECTION, senior_peers);
-        send_msg_if(MSG_OVERRULED, junior_peers);
-      }
-      break;
-    }
-    case ElectionState::Running:
-    {
-      auto elapsed_s = time(NULL) - node->election_start_time;
-      bool election_timeout = (1000 * elapsed_s) > 10000;
-      if (election_timeout)
-      {
-        LOGF("ELECTION ENDED, MAX ID %d", std::max(node->highest_id_in_election, node->info.id));
-        if (node->highest_id_in_election <= node->info.id)
-        {
-          node->change_manager(node->info.id);
-        }
-        node->election_state = NoElection;
-        node->highest_id_in_election = -1;
-      }
-      break;
-    }
-    case ElectionState::Overruled:
-    {
-      auto elapsed_s = time(NULL) - node->election_start_time;
-      bool coordinatrion_timeout = (1000 * elapsed_s) > 10000;
-      if (coordinatrion_timeout)
-      {
-        LOGF("COORDINATION ENDED, MAX ID %d", std::max(node->highest_id_in_election, node->info.id));
-        node->election_state = ElectionState::NoElection;
-        node->election_start_time = time(NULL);
-        node->highest_id_in_election = -1;
-      }
-      break;
-    }
-    }
-  }
+  send_msg_if(serialize_table(), am_manager);
 
   auto poll_result = FileDescriptor::poll(file_descriptors, POLLIN, 5000);
+
+  if (poll_result.size() > 0 && node->is_manager())
+  {
+    auto &manager = participants.find_manager_blocking();
+    manager.last_conection_timestamp = time(NULL);
+    node->info.last_conection_timestamp = time(NULL);
+  }
+
   for (auto &poll : poll_result)
   {
     if (node->my_fd(poll.fd))
@@ -222,10 +176,7 @@ void MonitoringService::monitor_peers()
     auto optional_peer = participants.find_by_socket(sock);
     if (!optional_peer.has_value())
       continue;
-
-    auto &[perr_host, peer_refrence] = optional_peer.value();
-    auto &peer = peer_refrence.get();
-    peer.last_conection_timestamp = time(NULL);
+    auto &peer = *optional_peer.value();
 
     string buffer(1024, '\0');
     int read = sock.recv(&buffer);
@@ -237,101 +188,37 @@ void MonitoringService::monitor_peers()
       continue;
     }
 
-    size_t idx_EXIT = buffer.find("exit");
-    if (idx_EXIT != string::npos)
+    int idx_begin_table = buffer.find(MSG_BEGIN_TABLE);
+    if (idx_begin_table != string::npos)
     {
-      LOGF("Exiting from %s", perr_host.c_str());
-      sock.close();
-      to_remove.push_back(perr_host);
-      participants.dirty = true;
-      continue;
+      read_table(buffer.substr(idx_begin_table));
+      send_msg_if(MSG_ACK, to_manager);
     }
+  }
 
-    size_t idx_ELECTION = buffer.rfind(MSG_ELECTION, 0);
-    size_t idx_OVERRULED = buffer.rfind(MSG_OVERRULED, 0);
-    size_t idx_OBEY = buffer.rfind(MSG_OBEY, 0);
-    size_t idx_BEGIN_TABLE = buffer.rfind(MSG_BEGIN_TABLE, 0);
+  if (!node->is_manager())
+  {
+    auto manger_opt = participants.find_manager();
+    if (!manger_opt.has_value())
+      return;
+    auto &manager = *manger_opt.value();
 
-    if (idx_ELECTION != string::npos)
+    switch (node->election_state)
     {
-      if (node->election_state == ElectionState::NoElection)
+    case ElectionState::NoElection:
+    {
+      auto elapsed_seconds = time(NULL) - manager.last_conection_timestamp;
+      bool manager_timeout = elapsed_seconds >= 10;
+      if (manager_timeout)
       {
-        LOGF("RECIVED ELECTION FROM %d", peer.id);
-        if (node->is_manager())
-        {
-          int result = peer.socket->send(MSG_OBEY);
-          if (result < 0)
-          {
-            perrorcode("send");
-          }
-        }
-        else
-        {
-          node->election_start_time = time(NULL);
-          node->highest_id_in_election = std::max(node->highest_id_in_election, peer.id);
-          send_msg_if(MSG_ELECTION, senior_peers);
-          send_msg_if(MSG_OVERRULED, junior_peers);
-          node->election_state = ElectionState::Running;
-        }
+        //LOGF("Manager %d not responding elapsed %ld", manager.id, elapsed_seconds);
+        // node->election_start_time = time(NULL);
+        // node->election_state = ElectionState::Running;
+        // send_msg_if(MSG_ELECTION, senior_peers);
+        // send_msg_if(MSG_OVERRULED, junior_peers);
       }
-      else
-      {
-        peer.socket->send(MSG_ACK);
-      }
+      break;
     }
-
-    if (idx_OVERRULED != string::npos)
-    {
-      if (node->election_state == ElectionState::Overruled)
-      {
-        peer.socket->send(MSG_ACK);
-      }
-      else
-      {
-        if (peer.id < node->info.id)
-        {
-          LOGF("DEGENERATE CASE: JUNIOR PEER %d CANNOT OVERRULE ME", peer.id);
-          peer.socket->send(MSG_OVERRULED); // NO U
-        }
-        else
-        {
-          LOGF("OVERRULED BY %d", peer.id);
-          peer.socket->send(MSG_ACK);
-          node->highest_id_in_election = -1;
-          node->election_state = ElectionState::Overruled;
-        }
-      }
-    }
-
-    if (idx_OBEY != string::npos)
-    {
-      LOGF("RECIVED OBEY FROM ID %d", peer.id);
-      if (peer.id < node->info.id)
-      {
-        LOGF("JUNIOR %d IN CHARGE STARNING NEW ELECTION", peer.id);
-        node->election_state = ElectionState::Running;
-        send_msg_if("ELECTION", senior_peers);
-        send_msg_if("OVERRULED", junior_peers);
-      }
-      else
-      {
-        LOGF("OBEYING %d", peer.id);
-        peer.socket->send("ACK");
-        node->highest_id_in_election = -1;
-        node->election_state = ElectionState::NoElection;
-        node->change_manager(peer.id);
-      }
-    }
-
-    if (!node->is_manager())
-    {
-      FUZZ_DELAY;
-      read = peer.socket->send(client_msg);
-
-      if (idx_BEGIN_TABLE != string::npos)
-      {
-        read_table(buffer.substr(idx_BEGIN_TABLE));
-      }
     }
   }
 }
@@ -447,15 +334,20 @@ string MonitoringService::serialize_table()
 
 void MonitoringService::send_msg_if(const string &msg, std::function<bool(participant_t &)> predicate)
 {
-  ParticipantTable &participants = node->participants;
-  for (auto &[host, participant] : participants.map)
+  try
   {
-    if (!predicate(participant) || participant.socket->file_descriptor < 0)
-      continue;
-    if (participant.socket->send(msg) < 0)
+    ParticipantTable &participants = node->participants;
+    for (auto &[host, participant] : participants.map)
     {
-      perrorcode("send");
+      if (participant.socket->file_descriptor < 0 || !predicate(participant))
+        continue;
+      if (participant.socket->send(msg) < 0)
+        perrorcode("send");
     }
+  }
+  catch (const std::exception &e)
+  {
+    LOGF("Exception: %s", e.what());
   }
 }
 
