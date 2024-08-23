@@ -18,15 +18,9 @@
 #define ARRAY_POSTFIXLEN(ARRAY) ARRAY, ARRAY_LENGTH(ARRAY)
 #define ARRAY_PREFIXLEN(ARRAY) ARRAY_LENGTH(ARRAY), ARRAY
 
-#define perrorcode(message) perrorcode_(message, __FILE__, __LINE__)
-
 #define eprintf(message, ...) fprintf(stderr, message " [%s:%d]", ##__VA_ARGS__, __FILE__, __LINE__)
-
-static inline void perrorcode_(const char *message, const char *file, int line)
-{
-  perror(message);
-  std::cerr << "errno: " << errno << " in " << file << ":" << line << std::endl;
-}
+#define error_printf(error, fmt, ...) fprintf(stderr, "[%s] " fmt " [%s:%d]\n", strerror(error), ##__VA_ARGS__, __FILE__, __LINE__)
+#define errno_printf(fmt, ...) fprintf(stderr, "[%s] " fmt " [%s:%d]\n", strerror(errno), ##__VA_ARGS__, __FILE__, __LINE__)
 
 static inline int msleep(long msec)
 {
@@ -84,7 +78,7 @@ static inline string get_hostname()
 #endif
 
 #define RSLEEP_MIN 50
-#define RSLEEP_MAX 500
+#define RSLEEP_MAX 500 - RSLEEP_MIN
 static void rsleep()
 {
   int rng = rand() % RSLEEP_MAX + RSLEEP_MIN;

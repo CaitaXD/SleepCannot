@@ -50,24 +50,33 @@
 #include "../headers/node.hpp"
 #undef NODE_IMPLEMENTATION
 
+#define SERVER_IMPLEMENTATION
+#include "../headers/Net/Server.hpp"
+#undef SERVER_IMPLEMENTATION
+
 StringEqComparerIgnoreCase string_equals;
 bool is_server = false;
 
+std::vector<string> hosts_marked_for_removal;
 Node *node = NULL;
+
 void sigpipe_handler(int signum)
 {
-  LOGF("SIGPIPE");
+  int saved_errno = errno;
   (void)signum;
+  LOGF("SIGPIPE marking dead peers");
   ParticipantTable &participants = node->participants;
-  for (auto &[host, participant] : participants.map)
+
+  for (auto &[host, participant] : participants)
   {
-    if (participant.socket->lasterrno == EPIPE)
+    if (errno == EPIPE && participant.client_socket->lasterrno == EPIPE)
     {
-      participant.socket->close();
-      node->ms->mark_as_deleted(host);
-      participant.socket->lasterrno = 0;
+      participant.client_socket->close();
+      participant.client_socket->lasterrno = 0;
+      hosts_marked_for_removal.push_back(host);
     }
   }
+  errno = saved_errno;
 }
 
 int main(int argc, char **argv)
@@ -90,7 +99,7 @@ int main(int argc, char **argv)
   sigaction(SIGPIPE, &sigpipe, NULL);
 
   node = std::make_unique<Node>(is_server).release();
-  node->run_node();
+  node->start();
 
   LOGF("Goodbye");
   return 0;

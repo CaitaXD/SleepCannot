@@ -16,9 +16,9 @@ struct FileDescriptor
   FileDescriptor();
   ~FileDescriptor();
   int file_descriptor;
-  bool keep_alive;
+  bool keep_open_on_destructor;
 
-  pollfd poll(int poll_events, int timeout);
+  pollfd poll(int poll_events = POLLIN, int timeout = 0);
   static std::vector<pollfd> poll(std::vector<FileDescriptor *> &sockets, int poll_flag, int timeout);
 
   constexpr FileDescriptor &operator=(FileDescriptor &&other);
@@ -32,17 +32,18 @@ struct FileDescriptor
 #endif // FILE_DESCRIPTOR_H_
 #ifdef FILE_DESCRIPTOR_IMPLEMENTATION
 
-FileDescriptor::FileDescriptor() : file_descriptor(-1), keep_alive(false) {}
-FileDescriptor::FileDescriptor(int file_descriptor) : file_descriptor(file_descriptor), keep_alive(false) {}
+FileDescriptor::FileDescriptor() : file_descriptor(-1), keep_open_on_destructor(false) {}
+FileDescriptor::FileDescriptor(int file_descriptor) : file_descriptor(file_descriptor), keep_open_on_destructor(false) {}
 FileDescriptor::~FileDescriptor()
 {
-  if (keep_alive)
+  if (keep_open_on_destructor)
   {
     return;
   }
   if (file_descriptor != -1)
   {
-    ::close(file_descriptor);
+    //LOGF("Closing file descriptor %d", file_descriptor);
+    //::close(file_descriptor);
   }
 }
 
@@ -75,14 +76,15 @@ std::vector<pollfd> FileDescriptor::poll(std::vector<FileDescriptor *> &file_des
     return std::vector<pollfd>{};
   }
 
-  std::vector<pollfd> poll_result = std::vector<pollfd>(size);
+  std::vector<pollfd> poll_result = std::vector<pollfd>();
   for (nfds_t i = 0; i < size; i++)
   {
     if (fds[i].revents & poll_events)
     {
-      poll_result[i] = fds[i];
+      poll_result.push_back(fds[i]);
     }
   }
+
   return poll_result;
 }
 

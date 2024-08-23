@@ -26,7 +26,7 @@ namespace Net
 {
   enum AddressFamily
   {
-    InterNetwork = AF_INET,
+    IPv4 = AF_INET,
     IPv6 = AF_INET6
   };
 
@@ -81,6 +81,10 @@ namespace Net
     bool operator==(const IpEndpoint &other) const;
     static IpEndpoint broadcast(int port);
     string to_string() const;
+    int get_port() const
+    {
+      return ntohs(((struct sockaddr_in *)&socket_address)->sin_port);
+    }
   };
 
   struct NetworkInterface
@@ -277,7 +281,7 @@ namespace Net
     }
   };
 }
-#endif // NET_H_
+
 #ifdef NET_IMPLEMENTATION
 namespace InternetAddress
 {
@@ -299,17 +303,14 @@ namespace Net
   in_addr_t Address::host_order() const { return ntohl(netwrok_order_address); }
   in_addr_t Address::network_order() const { return netwrok_order_address; }
 
-  IpEndpoint::IpEndpoint()
-  {
-    address_length = sizeof(sockaddr);
-  }
+  IpEndpoint::IpEndpoint() : address_length(sizeof(sockaddr)), socket_address() {}
 
   IpEndpoint::IpEndpoint(uint32_t address, int port)
   {
     bzero(this, sizeof(*this));
     sockaddr_in *ipv4_socket_address = (sockaddr_in *)&socket_address;
     address_length = sizeof(*ipv4_socket_address);
-    ipv4_socket_address->sin_family = AddressFamily::InterNetwork;
+    ipv4_socket_address->sin_family = AddressFamily::IPv4;
     ipv4_socket_address->sin_addr.s_addr = htonl(address);
     ipv4_socket_address->sin_port = htons(port);
   }
@@ -319,7 +320,7 @@ namespace Net
     bzero(this, sizeof(*this));
     sockaddr_in *ipv4_socket_address = (sockaddr_in *)&socket_address;
     address_length = sizeof(*ipv4_socket_address);
-    ipv4_socket_address->sin_family = AddressFamily::InterNetwork;
+    ipv4_socket_address->sin_family = AddressFamily::IPv4;
     ipv4_socket_address->sin_addr.s_addr = inet_addr(ip.c_str());
     ipv4_socket_address->sin_port = htons(port);
   }
@@ -331,7 +332,7 @@ namespace Net
     bzero(this, sizeof(*this));
     sockaddr_in *ipv4_socket_address = (sockaddr_in *)&socket_address;
     address_length = sizeof(*ipv4_socket_address);
-    ipv4_socket_address->sin_family = AddressFamily::InterNetwork;
+    ipv4_socket_address->sin_family = AddressFamily::IPv4;
     ipv4_socket_address->sin_addr.s_addr = address.network_order();
     ipv4_socket_address->sin_port = htons(port);
   }
@@ -368,7 +369,7 @@ namespace Net
   {
     sockaddr_in *ipv4_socket_address = (sockaddr_in *)&socket_address;
     string ip = inet_ntoa(ipv4_socket_address->sin_addr);
-    string port = std::to_string(ipv4_socket_address->sin_port);
+    string port = std::to_string(ntohs(ipv4_socket_address->sin_port));
     return ip + ":" + port;
   }
 
@@ -392,3 +393,5 @@ using SocketType = Net::SocketType;
 using SocketProtocol = Net::SocketProtocol;
 using NetworkInterface = Net::NetworkInterface;
 using NetworkInterfaceList = Net::NetworkInterfaceList;
+
+#endif // NET_H_

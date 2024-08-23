@@ -60,7 +60,7 @@ void DiscoveryService::start_server()
                    {
         DiscoveryService *ds = (DiscoveryService *)data;
         Socket &server_socket = ds->udp_socket;
-        server_socket.open(AddressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
+        server_socket.open(AddressFamily::IPv4, SocketType::Datagram, SocketProtocol::UDP);
         int result = server_socket.set_option(SO_BROADCAST, 1);
         result |= server_socket.set_option(SO_REUSEADDR, 1);
         result |= server_socket.bind(InternetAddress::Any, ds->port);
@@ -144,7 +144,7 @@ void DiscoveryService::start_client()
         Socket &client_socket = ds->udp_socket;
         IpEndpoint braodcast_ep = IpEndpoint::broadcast(ds->port);
         
-        int result = client_socket.open(AddressFamily::InterNetwork, SocketType::Datagram, SocketProtocol::UDP);
+        int result = client_socket.open(AddressFamily::IPv4, SocketType::Datagram, SocketProtocol::UDP);
         //result |= client_socket.bind(InternetAddress::Any, ds->port);
         result |= client_socket.set_option(SO_BROADCAST, 1);
 

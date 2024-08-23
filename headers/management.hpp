@@ -12,16 +12,7 @@
 #include <optional>
 #include "Net/Socket.hpp"
 #include "string_helpers.hpp"
-
-// Used to control read and write access to the management table
-typedef struct mutex_data_t
-{
-    std::mutex mutex;
-    std::condition_variable cv;
-    bool updated; // might not be necessary
-    int update_count;
-    std::vector<int> read_count;
-} mutex_data_t;
+#include <shared_mutex>
 
 #define MAXLINE 1024
 #define INITIAL_PORT 35512
@@ -135,7 +126,7 @@ struct MachineEndpoint : IpEndpoint
         bzero(ipv4_socket_address, sizeof(*ipv4_socket_address));
 
         ep.address_length = sizeof(sockaddr_in);
-        ipv4_socket_address->sin_family = AddressFamily::InterNetwork;
+        ipv4_socket_address->sin_family = AddressFamily::IPv4;
         ipv4_socket_address->sin_addr.s_addr = address.network_order();
         ipv4_socket_address->sin_port = htons(port);
         ep.mac = MacAddress::get_mac();
@@ -145,102 +136,89 @@ struct MachineEndpoint : IpEndpoint
 };
 
 // Represents a participant using the service
-typedef struct participant_t
+typedef struct Peer
 {
     MachineEndpoint machine;
     bool status; // true means awake, false means asleep
-    std::shared_ptr<Socket> socket;
+    std::shared_ptr<Socket> client_socket;
     time_t last_conection_timestamp;
     int id; // used in election
     bool is_manager;
-} participant_t;
+} Peer;
+
+// #include "DataStructures/ReaderWriterLock.h"
+
+typedef std::shared_mutex Lock;
+// typedef std::unique_lock<Lock> WriteLock;
+// typedef std::shared_lock<Lock> ReadLock;
+struct Dummy
+{
+    Lock &dummy;
+    Dummy(Lock &lock) : dummy(lock) {}
+};
+typedef Dummy WriteLock;
+typedef Dummy ReadLock;
 
 // Represents the table of users using the service
 struct ParticipantTable
 {
-    std::unordered_map<string, participant_t, StringHashIgnoreCase, StringEqComparerIgnoreCase> map;
+private:
+    std::unordered_map<string, Peer, StringHashIgnoreCase, StringEqComparerIgnoreCase> map;
+    Lock sync_root;
+    std::mutex upgrade_mutex;
+
+public:
     bool dirty;
-    std::mutex sync_root;
     unsigned int clock;
     bool send_table;
 
     ParticipantTable();
-    ~ParticipantTable();
 
-    void lock();
-    bool lock_if(std::function<bool(ParticipantTable &)> condition);
-    void unlock();
     void print();
-    void add(const participant_t &participant);
+    void add(const Peer &participant);
     void remove(const std::string &hostname);
     void update_status(const std::string &hostname, bool status);
 
-    participant_t &get(const std::string &hostname);
+    Peer &get(const std::string &hostname);
 
-    std::optional<participant_t *> find_by_socket(const Socket &socket);
-    std::optional<participant_t *> find_by_address(const IpEndpoint &address);
-    std::optional<participant_t *> find_by_id(int id);
-    std::optional<participant_t *> find_manager();
-    participant_t &find_by_address_blocking(const IpEndpoint &address);
-    participant_t &find_manager_blocking();
-    participant_t &find_by_id_blocking(int id);
+    std::optional<Peer *> find_socket(const Socket &socket);
+    std::optional<Peer *> find_address(const IpEndpoint &address);
+    std::optional<Peer *> find_id(int id);
+    std::optional<Peer *> find_manager();
 
-    participant_t &get_or_add(const std::string &hostname, const participant_t &participant);
+    Peer &find_address_blocking(const IpEndpoint &address);
+    Peer &find_manager_blocking();
+    Peer &find_id_blocking(int id);
+    Peer &find_socket_blocking(const Socket &socket);
+    Peer &get_or_add(const std::string &hostname, const Peer &participant);
+
+    auto begin() { return map.begin(); }
+    auto end() { return map.end(); }
+    auto find(const std::string &hostname) { return map.find(hostname); }
+    auto size() { return map.size(); }
+    auto &operator[](const std::string &hostname) { return map[hostname]; }
+    auto emplace(const std::string &hostname, const Peer &participant) { return map.emplace(hostname, participant); }
+
+    const auto begin() const { return map.begin(); }
+    const auto end() const { return map.end(); }
+    const auto find(const std::string &hostname) const { return map.find(hostname); }
+    const auto size() const { return map.size(); }
+
+    ReadLock read_lock()
+    {
+        return ReadLock{sync_root};
+    }
+
+    WriteLock write_lock()
+    {
+        return WriteLock{sync_root};
+    }
 };
 
 #endif // MANAGEMENT_H_
 #ifdef MANAGEMENT_IMPLEMENTATION
 
-void show_status(const std::unordered_map<string, participant_t> &table, mutex_data_t &mutex_data, int &read_count)
-{
-    while (true)
-    {
-        std::unique_lock<std::mutex> lock(mutex_data.mutex);
-        mutex_data.cv.wait(lock, [&]
-                           { return read_count < mutex_data.update_count; });
-        read_count = mutex_data.update_count;
-        for (auto it = table.begin(); it != table.end(); ++it)
-        {
-            if (it->second.status)
-            {
-                std::cout << it->first << " is awake" << std::endl;
-            }
-            else
-            {
-                std::cout << it->first << " is asleep" << std::endl;
-            }
-        }
-        mutex_data.updated = false;
-    }
-}
-
-ParticipantTable::ParticipantTable() : map(), dirty(false), sync_root(), clock(0), send_table(false) {};
-ParticipantTable::~ParticipantTable()
-{
-    unlock();
-}
-
-void ParticipantTable::lock()
-{
-    sync_root.lock();
-}
-
-bool ParticipantTable::lock_if(std::function<bool(ParticipantTable &)> condition)
-{
-    lock();
-    bool result = condition(*this);
-    if (!result)
-    {
-        unlock();
-        return false;
-    }
-    return true;
-}
-
-void ParticipantTable::unlock()
-{
-    sync_root.unlock();
-}
+ParticipantTable::ParticipantTable() : map(6), sync_root(), dirty(false), clock(0), send_table(false) {};
 
 void ParticipantTable::print()
 {
@@ -263,7 +241,7 @@ void ParticipantTable::print()
     dirty = false;
 }
 
-void ParticipantTable::add(const participant_t &participant)
+void ParticipantTable::add(const Peer &participant)
 {
     string machine_hostname = participant.machine.hostname;
     auto [_, success] = map.emplace(machine_hostname, participant);
@@ -300,16 +278,16 @@ void ParticipantTable::update_status(const std::string &hostname, bool status)
     }
 }
 
-participant_t &ParticipantTable::get(const std::string &hostname)
+Peer &ParticipantTable::get(const std::string &hostname)
 {
     return map.at(hostname);
 }
 
-std::optional<participant_t *> ParticipantTable::find_by_socket(const Socket &socket)
+std::optional<Peer *> ParticipantTable::find_socket(const Socket &socket)
 {
     for (auto &[host, participant] : map)
     {
-        if (participant.socket->file_descriptor == socket.file_descriptor)
+        if (participant.client_socket->file_descriptor == socket.file_descriptor)
         {
             return std::addressof(map.at(host));
         }
@@ -317,13 +295,13 @@ std::optional<participant_t *> ParticipantTable::find_by_socket(const Socket &so
     return std::nullopt;
 }
 
-std::optional<participant_t *> ParticipantTable::find_by_address(const IpEndpoint &address)
+std::optional<Peer *> ParticipantTable::find_address(const IpEndpoint &address)
 {
     for (auto &[host, participant] : map)
     {
         sockaddr_in *ipv4_socket_address = (sockaddr_in *)&participant.machine.socket_address;
-        sockaddr_in *peer_ipv4_socket_address = (sockaddr_in *)&address.socket_address;
-        bool sockeq = memcmp(&ipv4_socket_address->sin_addr, &peer_ipv4_socket_address->sin_addr, sizeof(peer_ipv4_socket_address->sin_addr)) == 0;
+        sockaddr_in *needle = (sockaddr_in *)&address.socket_address;
+        bool sockeq = strcmp(inet_ntoa(ipv4_socket_address->sin_addr), inet_ntoa(needle->sin_addr)) == 0;
         if (sockeq)
         {
             return std::addressof(map.at(host));
@@ -332,7 +310,7 @@ std::optional<participant_t *> ParticipantTable::find_by_address(const IpEndpoin
     return std::nullopt;
 }
 
-std::optional<participant_t *> ParticipantTable::find_by_id(int id)
+std::optional<Peer *> ParticipantTable::find_id(int id)
 {
     for (auto &[host, participant] : map)
     {
@@ -344,16 +322,17 @@ std::optional<participant_t *> ParticipantTable::find_by_id(int id)
     return std::nullopt;
 }
 
-participant_t &ParticipantTable::find_by_id_blocking(int id)
+Peer &ParticipantTable::find_id_blocking(int id)
 {
-    auto opt = find_by_id(id);
+    auto opt = find_id(id);
     while (!opt.has_value())
     {
+        opt = find_id(id);
     }
     return *opt.value();
 }
 
-std::optional<participant_t *> ParticipantTable::find_manager()
+std::optional<Peer *> ParticipantTable::find_manager()
 {
     for (auto &[host, participant] : map)
     {
@@ -365,7 +344,7 @@ std::optional<participant_t *> ParticipantTable::find_manager()
     return std::nullopt;
 }
 
-participant_t &ParticipantTable::get_or_add(const std::string &hostname, const participant_t &participant)
+Peer &ParticipantTable::get_or_add(const std::string &hostname, const Peer &participant)
 {
     auto it = map.find(hostname);
     if (it == map.end())
@@ -379,20 +358,32 @@ participant_t &ParticipantTable::get_or_add(const std::string &hostname, const p
     }
 }
 
-participant_t &ParticipantTable::find_by_address_blocking(const IpEndpoint &address)
+Peer &ParticipantTable::find_address_blocking(const IpEndpoint &address)
 {
-    auto opt = find_by_address(address);
+    auto opt = find_address(address);
     while (!opt.has_value())
     {
+        opt = find_address(address);
     }
     return *opt.value();
 }
 
-participant_t &ParticipantTable::find_manager_blocking()
+Peer &ParticipantTable::find_manager_blocking()
 {
     auto opt = find_manager();
     while (!opt.has_value())
     {
+        opt = find_manager();
+    }
+    return *opt.value();
+}
+
+Peer &ParticipantTable::find_socket_blocking(const Socket &socket)
+{
+    auto opt = find_socket(socket);
+    while (!opt.has_value())
+    {
+        opt = find_socket(socket);
     }
     return *opt.value();
 }

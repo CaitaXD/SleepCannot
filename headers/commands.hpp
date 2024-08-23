@@ -117,8 +117,8 @@ int command_exec(ParticipantTable &participants)
     string cmd_args = string(cmd).substr(commands[cmd_type].cmd.size());
     trim(cmd_args);
     auto host_name = string(cmd_args).substr(0, cmd_args.find(" "));
-    auto it = participants.map.find(host_name);
-    if (it == participants.map.end())
+    auto it = participants.find(host_name);
+    if (it == participants.end())
     {
         std::cerr << "[ERROR] Invalid Hostname" << std::endl;
         break;
@@ -127,7 +127,7 @@ int command_exec(ParticipantTable &participants)
     string magic_packet = "wakeonlan " + std::string(participant.machine.mac.mac_str);
     if (system(magic_packet.c_str()) < 0)
     {
-      perrorcode("wakeonlan");
+      errno_printf("wakeonlan");
     }
     break;
   }

@@ -108,14 +108,14 @@ discovery:
 monitoring:
     Socket my_socket;
     int result = 0;
-    result |= my_socket.open(AddressFamily::InterNetwork, SocketType::Stream, SocketProtocol::TCP);
+    result |= my_socket.open(AddressFamily::IPv4, SocketType::Stream, SocketProtocol::TCP);
     sleep(1);
     MachineEndpoint monitoring_server = server_machine.with_port(monitoring_port);
     result |= my_socket.connect(monitoring_server);
 
     if (result < 0)
     {
-        perrorcode("connect");
+        errno_printf("connect");
         exit(EXIT_FAILURE);
     }
 
@@ -123,7 +123,7 @@ monitoring:
 
     auto socket_ptr = std::make_shared<Socket>(std::move(my_socket));
 
-    participant_t me{
+    Peer me{
         .machine = MachineEndpoint::MyMachine(InternetAddress::Any, port),
         .status = true,
         .connect_socket = socket_ptr,
@@ -131,7 +131,7 @@ monitoring:
         .id = 1
     };
     
-    participant_t server{
+    Peer server{
         .machine = server_machine,
         .status = false,
         .connect_socket = socket_ptr,
@@ -145,7 +145,7 @@ monitoring:
     node.info = me;
     MonitoringService monitoring_service{node};
     assert(!monitoring_service.node->is_manager());
-    monitoring_service.start_service();
+    monitoring_service.start();
 
     while (1)
     {
@@ -179,7 +179,7 @@ monitoring:
     Socket my_socket;
 
     int result = 0;
-    result |= my_socket.open(AddressFamily::InterNetwork, SocketType::Stream, SocketProtocol::TCP);
+    result |= my_socket.open(AddressFamily::IPv4, SocketType::Stream, SocketProtocol::TCP);
     result |= my_socket.set_option(SO_REUSEADDR, 1);
     result |= my_socket.bind(monitoring_port);
     
@@ -191,7 +191,7 @@ monitoring:
 
     if (result < 0)
     {
-        perrorcode("listen");
+        errno_printf("listen");
         exit(EXIT_FAILURE);
     }
 
@@ -200,7 +200,7 @@ monitoring:
 
     client_socket.send("Hello there!");
 
-    participant_t me{
+    Peer me{
         .machine = MachineEndpoint::MyMachine(InternetAddress::Any, port),
         .status = true,
         .connect_socket = std::make_shared<Socket>(std::move(my_socket)),
@@ -208,7 +208,7 @@ monitoring:
         .id = 0
     };
 
-    participant_t client{
+    Peer client{
         .machine = client_machine,
         .status = false,
         .connect_socket = std::make_shared<Socket>(std::move(client_socket)),
@@ -222,7 +222,7 @@ monitoring:
     node.info = me;
     MonitoringService monitoring_service{node};
     assert(monitoring_service.node->is_manager());
-    monitoring_service.start_service();
+    monitoring_service.start();
 
     while (1)
     {

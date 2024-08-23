@@ -35,6 +35,11 @@ static inline void ascii_toupper(std::string &src)
     }
 }
 
+static inline string padleft(const string &str, int len, char c = '0')
+{
+    return str + string(len - str.length(), c);
+}
+
 struct StringEqComparerIgnoreCase
 {
     bool operator()(const std::string &lhs, const std::string &rhs) const
@@ -56,3 +61,17 @@ struct StringHashIgnoreCase
         return hash_function(str);
     }
 };
+
+static inline std::vector<std::string> string_split(const std::string &input, char delimiter)
+{
+    std::istringstream stream(input);
+    std::string token;
+    std::vector<std::string> arr;
+
+    while (std::getline(stream, token, delimiter))
+    {
+        arr.push_back(token);
+    }
+
+    return arr;
+}
