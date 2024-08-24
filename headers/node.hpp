@@ -181,10 +181,10 @@ restart:
         }
         while (is_manager())
         {
-            // if (key_hit())
-            // {
-            //     command_exec(participants);
-            // }
+            if (key_hit())
+            {
+                command_exec(participants);
+            }
             if (participants.dirty)
             {
                 // std::cout << CLEAR_SCREEN << "Manager\n";
