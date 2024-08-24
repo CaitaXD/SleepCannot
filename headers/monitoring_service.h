@@ -122,6 +122,7 @@ void MonitoringService::start()
       return peer.id != (node->get_info().id);
     };
 
+    // Not actually unused, but the compiler is begin a fucking idiot
     (void)is_senior_peer;
     (void)is_junior_peer;
     (void)is_other_peer;
