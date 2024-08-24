@@ -145,6 +145,15 @@ void Node::change_manager(int new_manager_id)
         info.is_manager = false;
         discover_peers_service.start_client();
     }
+    else 
+    {
+        #ifndef LOG_ENABLE  
+        std::cout << CLEAR_SCREEN << std::endl;
+        #endif // LOG_ENABLE
+        help_msg_client();
+        NetworkInterfaceList network_interfaces = NetworkInterfaceList::begin();
+        std::printf("MAC ADDRESS: %s\nHOSTNAME: %s\n%s\nMANAGER ID: %d\n", MacAddress::get_mac().mac_str, get_hostname().c_str(), network_interfaces->to_string().c_str(), new_manager_id);
+    }
 
     if (new_manager_id == info.id)
     {
@@ -170,6 +179,9 @@ void Node::start()
     monitoring_service_start(monitoring_service);
     listen(20);
 restart:
+    #ifndef LOG_ENABLE  
+    std::cout << CLEAR_SCREEN << std::endl;
+    #endif // LOG_ENABLE
     if (is_manager())
     {
         LOGF("Starting as manager");
@@ -181,13 +193,15 @@ restart:
         }
         while (is_manager())
         {
-            // if (key_hit())
-            // {
-            //     command_exec(participants);
-            // }
+            if (key_hit())
+            {
+                command_exec(participants);
+            }
             if (participants.dirty)
             {
-                // std::cout << CLEAR_SCREEN << "Manager\n";
+                #ifndef LOG_ENABLE  
+                std::cout << CLEAR_SCREEN << "Manager\n";
+                #endif // LOG_ENABLE
                 help_msg_server();
                 {
                     participants.read_lock();
@@ -202,7 +216,7 @@ restart:
         LOGF("Manger ID: %d", manager_id);
         discover_peers_service.start_client();
         NetworkInterfaceList network_interfaces = NetworkInterfaceList::begin();
-        std::printf("MAC ADDRESS: %s\nHOSTNAME: %s\n%s\n", MacAddress::get_mac().mac_str, get_hostname().c_str(), network_interfaces->to_string().c_str());
+        std::printf("MAC ADDRESS: %s\nHOSTNAME: %s\n%s\nMANAGER ID: %d\n", MacAddress::get_mac().mac_str, get_hostname().c_str(), network_interfaces->to_string().c_str(), manager_id);
         help_msg_client();
         while (!is_manager())
         {
