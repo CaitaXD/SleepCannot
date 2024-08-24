@@ -37,6 +37,7 @@
 #include "serialization.hpp"
 #include <span>
 
+#define MANAGER_TIMEOUT 5
 static const char MSG_BEGIN_TABLE[] = "BEGIN TABLE";
 static const char MSG_ACK[] = "ACK";
 static const char MSG_ELECTION[] = "ELECTION";
@@ -103,7 +104,7 @@ void MonitoringService::start()
 {
   const auto monitoring_function = [](void *data) -> void *
   {
-    time_t last_recored_epoch = time(NULL);
+    time_t loop_epoch = time(NULL);
     MonitoringService *self = (MonitoringService *)data;
     Node *node = self->node;
     ParticipantTable &participants = node->participants;
@@ -127,7 +128,7 @@ void MonitoringService::start()
 
     while (self->running)
     {
-      time(&last_recored_epoch);
+      time(&loop_epoch);
 
       // Write lock
       {
@@ -148,6 +149,11 @@ void MonitoringService::start()
         string payload = message.payload;
         Peer peer = message.sender;
         time_t timestamp = message.timestamp;
+        if ((loop_epoch - timestamp) > MANAGER_TIMEOUT)
+        {
+          continue;
+        }
+
         size_t start_msg_begin_table = payload.find(MSG_BEGIN_TABLE);
         size_t start_msg_election = payload.find(MSG_ELECTION);
         size_t start_msg_back_down = payload.find(MSG_BACK_DOWN);
@@ -155,21 +161,19 @@ void MonitoringService::start()
         size_t start_msg_ack = payload.find(MSG_ACK);
 
         (void)start_msg_ack;
-        node->get_info().last_conection_timestamp = timestamp;
         // Write lock
         {
           participants.write_lock();
-          participants[peer.machine.hostname].last_conection_timestamp = std::max(timestamp, last_recored_epoch);
+          node->get_info().last_conection_timestamp = timestamp;
+          participants[peer.machine.hostname].last_conection_timestamp = std::max(timestamp, loop_epoch);
         }
 
         if (start_msg_begin_table != string::npos)
         {
-          // LOGF("Received TABLE from %s", peer.machine.hostname.c_str());
-
           string table = payload.substr(start_msg_begin_table);
           self->read_table(table);
 
-          auto &manager = participants.find_manager_blocking();
+          auto &manager = participants.find_id_blocking(node->manager_id); // Manager might have changed in the read_table
           assert(manager.client_socket != nullptr);
           auto &manager_socket = *manager.client_socket;
           int r = manager_socket.send(MSG_ACK);
@@ -177,10 +181,9 @@ void MonitoringService::start()
           {
             std::error_printf(manager_socket.lasterrno, "Error sending ACK to %s", manager.machine.hostname.c_str());
           }
-
           if ((manager.id < node->get_info().id) && (node->election_state == ElectionState::NoElection))
           {
-            LOGF("Young manager %d starting election", manager.id);
+            LOGF("Manager is a puny weakling. Id %d starting election", manager.id);
             node->election_state = ElectionState::Running;
             time(&node->election_start_time);
             node->highest_id_in_election = std::max(node->highest_id_in_election, manager.id);
@@ -191,9 +194,10 @@ void MonitoringService::start()
         if (start_msg_election != string::npos)
         {
           LOGF("Received ELECTION from %d", peer.id);
-          if (node->election_state == ElectionState::NoElection)
+          if (node->election_state == ElectionState::NoElection) // Read lock
           {
             LOGF("Election started");
+            participants.read_lock();
             node->election_state = ElectionState::Running;
             time(&node->election_start_time);
             node->highest_id_in_election = std::max(node->highest_id_in_election, peer.id);
@@ -209,14 +213,15 @@ void MonitoringService::start()
             node->election_state = ElectionState::Overruled;
           }
         }
-        if (start_msg_obey != string::npos)
+        if (start_msg_obey != string::npos) // Write lock
         {
           LOGF("Received OBEY from %d", peer.id);
+          participants.write_lock();
           if (peer.id < node->get_info().id && node->election_state)
           {
             LOGF("Restarting election peer %d is junior", peer.id);
             node->election_state = ElectionState::Running;
-            node->election_start_time = timestamp;
+            time(&node->election_start_time);
             node->highest_id_in_election = std::max(node->highest_id_in_election, peer.id);
             node->send_to_peers(MSG_ELECTION, is_senior_peer);
             node->send_to_peers(MSG_BACK_DOWN, is_junior_peer);
@@ -224,14 +229,10 @@ void MonitoringService::start()
           else
           {
             LOGF("Peer %d is senior, changing manager", peer.id);
-            // Write lock
-            {
-              participants.write_lock();
-              node->change_manager(peer.id);
-              node->election_start_time = 0;
-              node->election_state = ElectionState::NoElection;
-              node->highest_id_in_election = -1;
-            }
+            node->change_manager(peer.id);
+            node->election_start_time = 0;
+            node->election_state = ElectionState::NoElection;
+            node->highest_id_in_election = -1;
           }
         }
       }
@@ -255,7 +256,7 @@ void MonitoringService::start()
                 sock.send(payload);
               }
             }
-            bool timed_out = (last_recored_epoch - peer.last_conection_timestamp) > client_timeout;
+            bool timed_out = (loop_epoch - peer.last_conection_timestamp) > client_timeout;
             participants.update_status(host, !timed_out);
           }
         }
@@ -289,7 +290,6 @@ void election_state_machine_syncronized(Node *node, ParticipantTable &participan
   };
 
   time_t election_running_timeout = 10;
-  time_t manager_timeout = 5;
   time_t epoch = time(NULL);
 
   switch (node->election_state)
@@ -305,20 +305,8 @@ void election_state_machine_syncronized(Node *node, ParticipantTable &participan
         break;
       }
       auto &manager = **opt_manager;
-      bool manager_timed_out = (epoch - manager.last_conection_timestamp) > manager_timeout;
-
-      auto &info = node->get_info();
-      bool im_highest_id = true;
-      for (auto &[host, peer] : participants)
-      {
-        if (peer.id > info.id)
-        {
-          im_highest_id = false;
-          break;
-        }
-      }
-
-      if (manager_timed_out || im_highest_id)
+      bool manager_timed_out = (epoch - manager.last_conection_timestamp) > MANAGER_TIMEOUT;
+      if (manager_timed_out)
       {
         LOGF("Manager timed out elapsed %ld", epoch - manager.last_conection_timestamp);
         node->election_state = ElectionState::Running;
@@ -413,6 +401,7 @@ void MonitoringService::read_participant(Peer &recieved_participant)
     node->manager_id = recieved_id;
   }
 
+  node_info.is_manager = recieved_is_manager && recieved_id == node_info.id;
   if (string_equals(recieved_machine.hostname, node_info.machine.hostname))
   {
     node_info.id = recieved_id;

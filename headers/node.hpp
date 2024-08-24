@@ -198,6 +198,8 @@ restart:
     }
     else
     {
+        LOGF("Starting as client");
+        LOGF("Manger ID: %d", manager_id);
         discover_peers_service.start_client();
         NetworkInterfaceList network_interfaces = NetworkInterfaceList::begin();
         std::printf("MAC ADDRESS: %s\nHOSTNAME: %s\n%s\n", MacAddress::get_mac().mac_str, get_hostname().c_str(), network_interfaces->to_string().c_str());

@@ -149,15 +149,15 @@ typedef struct Peer
 // #include "DataStructures/ReaderWriterLock.h"
 
 typedef std::shared_mutex Lock;
-// typedef std::unique_lock<Lock> WriteLock;
-// typedef std::shared_lock<Lock> ReadLock;
+typedef std::unique_lock<Lock> WriteLock;
+typedef std::shared_lock<Lock> ReadLock;
 struct Dummy
 {
     Lock &dummy;
     Dummy(Lock &lock) : dummy(lock) {}
 };
-typedef Dummy WriteLock;
-typedef Dummy ReadLock;
+//typedef Dummy WriteLock;
+//typedef Dummy ReadLock;
 
 // Represents the table of users using the service
 struct ParticipantTable
