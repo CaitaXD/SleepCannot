@@ -265,7 +265,7 @@ void Node::connect_peers()
         {
             Peer peer;
             bool im_manager = is_manager();
-            peer.machine = discoveredMachine;
+            peer.machine = discoveredMachine; // TODO: this machine has empty mac address string
             peer.status = true;
             peer.last_conection_timestamp = time(NULL);
             peer.id = im_manager ? (last_peer_id() - 1) : INITIAL_ID;

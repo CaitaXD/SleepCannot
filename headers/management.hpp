@@ -223,9 +223,10 @@ ParticipantTable::ParticipantTable() : map(6), sync_root(), dirty(false), clock(
 void ParticipantTable::print()
 {
     std::cout << "\t\t\t\033[1mManagement Table\033[0m\t\t\t\n";
-    std::cout << "\033[1mHost name\tMac address\t\tIp address\t\tstatus\t\tLast conection\033[0m\tId\n";
+    std::cout << "\033[1mHost name\tMac address\t\tIp address\t\tstatus\t\tLast conection\t\tId\033[0m\n";
     for (auto [host_name, participant] : map)
     {
+        if (participant.is_manager) continue;
         MachineEndpoint machine = participant.machine;
         string status = participant.status ? "awake" : "sleeping";
         struct tm *tm = localtime(&participant.last_conection_timestamp);

@@ -26,7 +26,7 @@ dockerrun:
 	docker run -d --name server --network bridge -t sleep_server 
 	docker run -d --name client0 --network bridge -t sleep_client
 	docker run -d --name client1 --network bridge -t sleep_client
-	# docker run -d --name client2 --network bridge -t sleep_client
+	docker run -d --name client2 --network bridge -t sleep_client
 	# docker run -d --name client3 --network bridge -t sleep_client
 	# docker run -d --name client4 --network bridge -t sleep_client
 

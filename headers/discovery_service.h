@@ -109,8 +109,21 @@ void DiscoveryService::start_server()
     
                 ds->endpoints.enqueue(client_machine);
 
-                string server_msg_hostname = server_msg + get_hostname();
-                server_socket.send(server_msg_hostname, client_machine, MSG_DONTWAIT);
+                string server_message;
+                MacAddress mac = MacAddress::get_mac();
+                string hostname = get_hostname();
+                int hostname_len = hostname.length();
+
+                server_message.append(server_msg);
+
+                server_message.append((char *)&(hostname_len), sizeof(hostname_len));
+                server_message.append(hostname);
+                
+                server_message.append((char *)mac.mac_addr, MAC_ADDR_MAX);
+                server_message.append(mac.mac_str, MAC_STR_MAX);
+
+                // Sending server info to client
+                server_socket.send(server_message, client_machine, MSG_DONTWAIT);
             }
         }
         ds->running = false;
@@ -170,8 +183,23 @@ void DiscoveryService::start_client()
             {
                 if (ds->endpoints.empty())
                 {
-                    string_view hostname = msg.substr(server_msg.size());
-                    server_endpoint.hostname = hostname;
+                    int cursor = server_msg.size();
+                    int server_hostname_len = *(int *)msg.substr(cursor, sizeof(int)).data();
+                    cursor += sizeof(int);
+        
+                    string_view server_hostname = msg.substr(cursor, server_hostname_len);
+                    cursor += server_hostname_len;
+        
+                    string_view server_mac_addr = msg.substr(cursor, MAC_ADDR_MAX);
+                    cursor += MAC_ADDR_MAX;
+        
+                    string_view server_mac_str = msg.substr(cursor, MAC_STR_MAX);
+                    cursor += MAC_STR_MAX;
+                    
+                    // Adding server info to the queue
+                    memcpy(server_endpoint.mac.mac_addr, server_mac_addr.data(), MAC_ADDR_MAX);
+                    memcpy(server_endpoint.mac.mac_str, server_mac_str.data(), MAC_STR_MAX);
+                    server_endpoint.hostname = server_hostname;
                     ds->endpoints.enqueue(server_endpoint);
                 }
                 return NULL;
