@@ -10,84 +10,6 @@
 namespace Concurrent
 {
 	template <typename T>
-	class LockFreeQueue;
-
-	template <typename T>
-	class LockFreeQueueIterator
-	{
-		friend class LockFreeQueue<T>;
-		friend struct LockFreeQueue<T>::node;
-		LockFreeQueue<T> *queue;
-		LockFreeQueue<T>::node *current;
-
-	public:
-		LockFreeQueueIterator(LockFreeQueue<T> *queue) : queue(queue), current(queue->head.load(std::memory_order_relaxed)) {}
-		LockFreeQueueIterator(LockFreeQueue<T> *queue, LockFreeQueue<T>::node *current) : queue(queue), current(current) {}
-
-		static LockFreeQueueIterator<T> begin(LockFreeQueue<T> *queue)
-		{
-			return LockFreeQueueIterator<T>(queue);
-		}
-
-		static LockFreeQueueIterator<T> end(LockFreeQueue<T> *queue)
-		{
-			return LockFreeQueueIterator<T>(queue, nullptr);
-		}
-
-		bool has_next()
-		{
-			return current != nullptr;
-		}
-		T next()
-		{
-			T result = current->value;
-			current = current->next.load(std::memory_order_acquire);
-			return result;
-		}
-
-		T &operator*()
-		{
-			return current->value;
-		}
-
-		T &operator->()
-		{
-			return current->value;
-		}
-
-		LockFreeQueueIterator<T> &operator++()
-		{
-			current = current->next.load(std::memory_order_acquire);
-			return *this;
-		}
-
-		bool operator==(LockFreeQueueIterator<T> other)
-		{
-			return current == other.current;
-		}
-
-		bool operator!=(LockFreeQueueIterator<T> other)
-		{
-			return current != other.current;
-		}
-
-		LockFreeQueueIterator<T> find(T value)
-		{
-			LockFreeQueueIterator<T> it =  LockFreeQueueIterator<T>::begin(queue);
-			LockFreeQueueIterator<T> end =  LockFreeQueueIterator<T>::end(queue);
-			while (it != end)
-			{
-				if (*it == value)
-				{
-					return it;
-				}
-				++it;
-			}
-			return end;
-		}
-	};
-
-	template <typename T>
 	class LockFreeQueue
 	{
 	public:
@@ -163,10 +85,6 @@ namespace Concurrent
 				theNext = theHead->next.load(std::memory_order_acquire);
 			}
 		}
-
-		auto begin() { return LockFreeQueueIterator<T>::begin(this); }
-		auto end() { return LockFreeQueueIterator<T>::end(this); }
-		auto find(T value) { return LockFreeQueueIterator<T>::begin(this).find(value); }
 	};
 }
 
