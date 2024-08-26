@@ -332,7 +332,7 @@ void Node::enqueue_messages(int poll_events, int timeout)
         Peer peer = participants.find_socket_blocking(socket);
         assert(peer.client_socket != nullptr);
         string payload;
-        int bytes_received = socket.recv(&payload);
+        int bytes_received = socket.recv(payload);
         if (bytes_received > 0)
         {
             message_queue.enqueue({

@@ -98,9 +98,10 @@ int main(int argc, char **argv)
   sigpipe.sa_flags = SA_RESTART;
   sigaction(SIGPIPE, &sigpipe, NULL);
 
-  node = std::make_unique<Node>(is_server).release();
+  node = new Node(is_server);
   node->start();
 
   LOGF("Goodbye");
+  delete node;
   return 0;
 }
