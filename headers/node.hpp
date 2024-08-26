@@ -9,8 +9,8 @@
 
 #define INITIAL_ID 1000
 #define CLEAR_SCREEN "\033[2J"   // ascii escape code to clear the screen
-#define TIMEOUT_ELECTION 2500    // ms
-#define TIMEOUT_COORDINATOR 5000 // ms
+// #define TIMEOUT_ELECTION 2500    // ms
+// #define TIMEOUT_COORDINATOR 5000 // ms
 
 // forward declarations CIRCULAR REFERENCES ARE PAINFUL
 class MonitoringService;

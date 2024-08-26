@@ -38,6 +38,7 @@
 #include <span>
 
 #define MANAGER_TIMEOUT 5
+#define ELECTION_TIMEOUT 10
 static const char MSG_BEGIN_TABLE[] = "BEGIN TABLE";
 static const char MSG_ACK[] = "ACK";
 static const char MSG_ELECTION[] = "ELECTION";
@@ -258,6 +259,7 @@ void MonitoringService::start()
               }
             }
             bool timed_out = (loop_epoch - peer.last_conection_timestamp) > client_timeout;
+            // if (timed_out) LOGF("Peer %s timed out %ld", host.c_str(), (loop_epoch - peer.last_conection_timestamp));
             participants.update_status(host, !timed_out);
           }
         }
@@ -290,7 +292,7 @@ void election_state_machine_syncronized(Node *node, ParticipantTable &participan
     return peer.id != (node->get_info().id);
   };
 
-  time_t election_running_timeout = 10;
+  time_t election_running_timeout = ELECTION_TIMEOUT;
   time_t epoch = time(NULL);
 
   switch (node->election_state)
