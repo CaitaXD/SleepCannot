@@ -171,6 +171,18 @@ void MonitoringService::start()
 
         if (start_msg_begin_table != string::npos)
         {
+          if (!node->is_manager())
+          {
+            auto &manager = participants.find_id_blocking(node->manager_id); // Manager might have changed in the read_table
+            assert(manager.client_socket != nullptr);
+            auto &manager_socket = *manager.client_socket;
+            int r = manager_socket.send(MSG_ACK);
+            if (r < 0)
+            {
+              std::error_printf(manager_socket.lasterrno, "Error sending ACK to %s", manager.machine.hostname.c_str());
+            }
+          }
+          
           string table = payload.substr(start_msg_begin_table);
           self->read_table(table);
 
