@@ -206,6 +206,7 @@ void MonitoringService::start()
             node->highest_id_in_election = std::max(node->highest_id_in_election, peer.id);
             node->send_to_peers(MSG_ELECTION, is_senior_peer);
             node->send_to_peers(MSG_BACK_DOWN, is_junior_peer); // ideally, send only to the peer that sent the election message
+            // peer.client_socket->send(MSG_BACK_DOWN);
           }
           else 
           {
@@ -213,6 +214,7 @@ void MonitoringService::start()
             participants.read_lock();
             node->highest_id_in_election = std::max(node->highest_id_in_election, peer.id);
             node->send_to_peers(MSG_BACK_DOWN, is_junior_peer); // ideally, send only to the peer that sent the election message TODO
+            // peer.client_socket->send(MSG_BACK_DOWN);
           }
         }
         if (start_msg_back_down != string::npos)
@@ -267,7 +269,7 @@ void MonitoringService::start()
                 sock.send(payload);
               }
             }
-            bool timed_out = (loop_epoch - peer.last_conection_timestamp) > (client_timeout + (INITIAL_ID - peer.id));
+            bool timed_out = (loop_epoch - peer.last_conection_timestamp) > (client_timeout + 2 * (INITIAL_ID - peer.id));
             // if (timed_out) LOGF("Peer %s timed out %ld", host.c_str(), (loop_epoch - peer.last_conection_timestamp));
             participants.update_status(host, !timed_out);
           }
