@@ -133,9 +133,9 @@ int Socket::send(const string &payload, int flags)
 
 int Socket::recv(string *payload, int flags)
 {
-  char buffer[1024];
+  char buffer[4096];
   memset(buffer, 0, sizeof(buffer));
-  int bytesReceived = ::recv(file_descriptor, buffer, 1024, flags);
+  int bytesReceived = ::recv(file_descriptor, buffer, 4096, flags);
   if (bytesReceived < 0)
   {
     lasterrno = errno;
@@ -238,8 +238,8 @@ Socket Socket::accept(IpEndpoint &ep)
 
 int Socket::recv(string *payload, IpEndpoint &ep, int flags)
 {
-  char buffer[1024]{};
-  int bytes_received = ::recvfrom(file_descriptor, buffer, 1024, flags, &ep.socket_address, &ep.address_length);
+  char buffer[4096]{};
+  int bytes_received = ::recvfrom(file_descriptor, buffer, 4096, flags, &ep.socket_address, &ep.address_length);
   if (bytes_received < 0)
   {
     lasterrno = errno;

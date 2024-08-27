@@ -195,24 +195,24 @@ void MonitoringService::start()
         if (start_msg_election != string::npos)
         {
           LOGF("Received ELECTION from %d", peer.id);
-          if (node->election_state == ElectionState::NoElection) // Read lock
+          participants.read_lock();
+          node->highest_id_in_election = std::max(node->highest_id_in_election, peer.id);
+          node->send_to_peers(MSG_BACK_DOWN, is_junior_peer);
+          if (node->election_state == ElectionState::NoElection) // if hasnt started election, start one
           {
             LOGF("Election started");
-            participants.read_lock();
             node->election_state = ElectionState::Running;
             time(&node->election_start_time);
-            node->highest_id_in_election = std::max(node->highest_id_in_election, peer.id);
             node->send_to_peers(MSG_ELECTION, is_senior_peer);
-            node->send_to_peers(MSG_BACK_DOWN, is_junior_peer);
           }
         }
         if (start_msg_back_down != string::npos)
         {
           LOGF("Received BACK_DOWN from %d", peer.id);
-          if (node->election_state == ElectionState::Running)
-          {
+          //if (node->election_state == ElectionState::Running)
+          //{
             node->election_state = ElectionState::Overruled;
-          }
+          //}
         }
         if (start_msg_obey != string::npos) // Write lock
         {
@@ -257,7 +257,7 @@ void MonitoringService::start()
                 sock.send(payload);
               }
             }
-            bool timed_out = (loop_epoch - peer.last_conection_timestamp) > client_timeout;
+            bool timed_out = (loop_epoch - peer.last_conection_timestamp) > (client_timeout + (INITIAL_ID - peer.id));
             participants.update_status(host, !timed_out);
           }
         }

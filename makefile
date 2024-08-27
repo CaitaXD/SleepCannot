@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = --debug -Wall -Wextra -lpthread -lm -std=c++20 -fsanitize=leak #-DLOG_ENABLE
+CXXFLAGS = --debug -Wall -Wextra -lpthread -lm -std=c++20 -fsanitize=leak -DLOG_ENABLE
 LDFLAGS =
 
 # Build directory
