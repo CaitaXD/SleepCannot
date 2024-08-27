@@ -8,7 +8,7 @@
 #define NODE_H_
 
 #define INITIAL_ID 1000
-#define CLEAR_SCREEN "\033[2J"   // ascii escape code to clear the screen
+#define CLEAR_SCREEN "\033[2J" // ascii escape code to clear the screen
 // #define TIMEOUT_ELECTION 2500    // ms
 // #define TIMEOUT_COORDINATOR 5000 // ms
 
@@ -32,6 +32,7 @@ void monitoring_service_mark_as_deleted(class MonitoringService *ms, const strin
 #include <condition_variable>
 #include "Net/Server.hpp"
 #include "Net/Client.hpp"
+#include "thread_pool.h"
 
 #define INITIAL_ID 1000
 #define CLEAR_SCREEN "\033[2J" // ascii escape code to clear the screen
@@ -145,11 +146,11 @@ void Node::change_manager(int new_manager_id)
         info.is_manager = false;
         discover_peers_service.start_client();
     }
-    else 
+    else
     {
-        #ifndef LOG_ENABLE  
+#ifndef LOG_ENABLE
         std::cout << CLEAR_SCREEN << std::endl;
-        #endif // LOG_ENABLE
+#endif // LOG_ENABLE
         help_msg_client();
         NetworkInterfaceList network_interfaces = NetworkInterfaceList::begin();
         std::printf("MAC ADDRESS: %s\nHOSTNAME: %s\n%s\nMANAGER ID: %d\n", MacAddress::get_mac().mac_str, get_hostname().c_str(), network_interfaces->to_string().c_str(), new_manager_id);
@@ -179,9 +180,9 @@ void Node::start()
     monitoring_service_start(monitoring_service);
     listen(20);
 restart:
-    #ifndef LOG_ENABLE  
+#ifndef LOG_ENABLE
     std::cout << CLEAR_SCREEN << std::endl;
-    #endif // LOG_ENABLE
+#endif // LOG_ENABLE
     if (is_manager())
     {
         LOGF("Starting as manager");
@@ -199,9 +200,9 @@ restart:
             }
             if (participants.dirty)
             {
-                #ifndef LOG_ENABLE  
+#ifndef LOG_ENABLE
                 std::cout << CLEAR_SCREEN << "Manager\n";
-                #endif // LOG_ENABLE
+#endif // LOG_ENABLE
                 help_msg_server();
                 {
                     participants.read_lock();
