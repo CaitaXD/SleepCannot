@@ -37,8 +37,8 @@
 #include "serialization.hpp"
 #include <span>
 
-#define MANAGER_TIMEOUT 5
-#define ELECTION_TIMEOUT 10
+#define MANAGER_TIMEOUT 10
+#define ELECTION_TIMEOUT 15
 static const char MSG_BEGIN_TABLE[] = "BEGIN TABLE";
 static const char MSG_ACK[] = "ACK";
 static const char MSG_ELECTION[] = "ELECTION";
@@ -190,7 +190,7 @@ void MonitoringService::start()
             time(&node->election_start_time);
             node->highest_id_in_election = std::max(node->highest_id_in_election, manager.id);
             node->send_to_peers(MSG_ELECTION, is_senior_peer);
-            node->send_to_peers(MSG_BACK_DOWN, is_junior_peer);
+            node->send_to_peers(MSG_BACK_DOWN, is_junior_peer); // remove
           }
         }
         if (start_msg_election != string::npos)
@@ -204,7 +204,14 @@ void MonitoringService::start()
             time(&node->election_start_time);
             node->highest_id_in_election = std::max(node->highest_id_in_election, peer.id);
             node->send_to_peers(MSG_ELECTION, is_senior_peer);
-            node->send_to_peers(MSG_BACK_DOWN, is_junior_peer);
+            node->send_to_peers(MSG_BACK_DOWN, is_junior_peer); // ideally, send only to the peer that sent the election message
+          }
+          else 
+          {
+            LOGF("Election already running");
+            participants.read_lock();
+            node->highest_id_in_election = std::max(node->highest_id_in_election, peer.id);
+            node->send_to_peers(MSG_BACK_DOWN, is_junior_peer); // ideally, send only to the peer that sent the election message TODO
           }
         }
         if (start_msg_back_down != string::npos)
@@ -219,7 +226,7 @@ void MonitoringService::start()
         {
           LOGF("Received OBEY from %d", peer.id);
           participants.write_lock();
-          if (peer.id < node->get_info().id && node->election_state)
+          if (peer.id < node->get_info().id && node->election_state) // shouldn't happen
           {
             LOGF("Restarting election peer %d is junior", peer.id);
             node->election_state = ElectionState::Running;
