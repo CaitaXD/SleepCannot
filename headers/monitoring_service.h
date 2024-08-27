@@ -37,6 +37,7 @@
 #include "serialization.hpp"
 #include <span>
 
+time_t new_election_bias = 0;
 #define MANAGER_TIMEOUT 10
 #define ELECTION_TIMEOUT 15
 static const char MSG_BEGIN_TABLE[] = "BEGIN TABLE";
@@ -239,6 +240,7 @@ void MonitoringService::start()
           {
             LOGF("Peer %d is senior, changing manager", peer.id);
             node->change_manager(peer.id);
+            new_election_bias = 10;
             node->election_start_time = 0;
             node->election_state = ElectionState::NoElection;
             node->highest_id_in_election = -1;
@@ -265,7 +267,7 @@ void MonitoringService::start()
                 sock.send(payload);
               }
             }
-            bool timed_out = (loop_epoch - peer.last_conection_timestamp) > client_timeout;
+            bool timed_out = (loop_epoch - peer.last_conection_timestamp) > (client_timeout + (INITIAL_ID - peer.id));
             // if (timed_out) LOGF("Peer %s timed out %ld", host.c_str(), (loop_epoch - peer.last_conection_timestamp));
             participants.update_status(host, !timed_out);
           }
@@ -315,9 +317,10 @@ void election_state_machine_syncronized(Node *node, ParticipantTable &participan
         break;
       }
       auto &manager = **opt_manager;
-      bool manager_timed_out = (epoch - manager.last_conection_timestamp) > MANAGER_TIMEOUT;
+      bool manager_timed_out = (epoch - manager.last_conection_timestamp) > MANAGER_TIMEOUT + new_election_bias;
       if (manager_timed_out)
       {
+        new_election_bias = 0;
         LOGF("Manager timed out elapsed %ld", epoch - manager.last_conection_timestamp);
         node->election_state = ElectionState::Running;
         node->election_start_time = epoch;
@@ -346,6 +349,7 @@ void election_state_machine_syncronized(Node *node, ParticipantTable &participan
           node->highest_id_in_election = -1;
           node->send_to_peers(MSG_OBEY, is_other_peer);
           node->change_manager(node_info.id);
+          new_election_bias = 10;
         }
         else
           goto CASE_END_ELECTION;
