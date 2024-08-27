@@ -333,7 +333,17 @@ void Node::enqueue_messages(int poll_events, int timeout)
         Peer peer = participants.find_socket_blocking(socket);
         assert(peer.client_socket != nullptr);
         string payload;
-        int bytes_received = socket.recv(payload);
+        int bytes_received;
+        int buffer_size = 1024;
+        do
+        {
+            bytes_received += socket.recv(payload, buffer_size);
+        } while (bytes_received == buffer_size);
+
+        if (bytes_received >= buffer_size) {
+            LOGF("WHOA TAHTS ALOT OF BYTES");
+        }
+
         if (bytes_received > 0)
         {
             message_queue.enqueue({

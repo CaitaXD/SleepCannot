@@ -35,7 +35,7 @@ public:
   int connect(const string &ip, int port);
   int connect(const IpEndpoint &ep);
   int send(const string &payload, int flags = 0);
-  int recv(string &payload, int flags = 0);
+  int recv(string &payload, int buffer_size, int flags = 0);
   int send(const string &payload, const IpEndpoint &ep, int flags = 0);
   int recv(string *payload, IpEndpoint &ep, int flags = 0);
   int close();
@@ -131,9 +131,9 @@ int Socket::send(const string &payload, int flags)
   return bytes_sent;
 }
 
-int Socket::recv(string &payload, int flags)
+int Socket::recv(string &payload, int buffer_size, int flags)
 {
-  char buffer[4096];
+  char buffer[buffer_size] = {};
   memset(buffer, 0, sizeof(buffer));
   int bytesReceived = ::recv(file_descriptor, buffer, sizeof(buffer), flags);
   if (bytesReceived < 0)
@@ -141,7 +141,7 @@ int Socket::recv(string &payload, int flags)
     lasterrno = errno;
     return bytesReceived;
   }
-  payload = string(buffer, bytesReceived);
+  payload += string(buffer, bytesReceived);
   return bytesReceived;
 }
 

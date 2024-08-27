@@ -256,8 +256,15 @@ void MonitoringService::start()
               bool writing_will_not_block = (sock.poll(POLLOUT, 0).revents & POLLOUT) != 0;
               if (writing_will_not_block)
               {
-                string payload = serialize_table(participants);
-                sock.send(payload);
+                if (participants.send_table)
+                {
+                  string payload = serialize_table(participants);
+                  sock.send(payload);
+                }
+                else
+                {
+                  sock.send(MSG_ACK);
+                }
               }
             }
             bool timed_out = (loop_epoch - peer.last_conection_timestamp) > (client_timeout + (INITIAL_ID - peer.id));
