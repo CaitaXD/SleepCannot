@@ -173,6 +173,17 @@ void MonitoringService::start()
 
         if (start_msg_begin_table != string::npos)
         {
+          {
+            auto &manager = participants.find_id_blocking(node->manager_id);
+            assert(manager.client_socket != nullptr);
+            auto &manager_socket = *manager.client_socket;
+            int r = manager_socket.send(MSG_ACK);
+            if (r < 0)
+            {
+              std::error_printf(manager_socket.lasterrno, "Error sending ACK to %s", manager.machine.hostname.c_str());
+            }
+          }
+
           string table = payload.substr(start_msg_begin_table);
           self->read_table(table);
 
@@ -184,6 +195,7 @@ void MonitoringService::start()
           {
             std::error_printf(manager_socket.lasterrno, "Error sending ACK to %s", manager.machine.hostname.c_str());
           }
+
           if ((manager.id < node->get_info().id) && (node->election_state == ElectionState::NoElection))
           {
             LOGF("Manager is a puny weakling. Id %d starting election", manager.id);
@@ -267,7 +279,7 @@ void MonitoringService::start()
                 }
               }
             }
-            bool timed_out = (loop_epoch - peer.last_conection_timestamp) > (client_timeout + (INITIAL_ID - peer.id));
+            bool timed_out = (loop_epoch - peer.last_conection_timestamp) > (client_timeout + (INITIAL_ID - peer.id) * 2);
             // if (timed_out) LOGF("Peer %s timed out %ld", host.c_str(), (loop_epoch - peer.last_conection_timestamp));
             participants.update_status(host, !timed_out);
           }

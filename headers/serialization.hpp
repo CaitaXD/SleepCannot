@@ -44,6 +44,21 @@ static inline std::optional<Peer> deserialize_participant(std::span<string> &par
     const int participant_size = 9;
     try
     {
+        if (parts.size() < participant_size)
+        {
+            LOGF("Participant size %zu is less than %d", parts.size(), participant_size);
+            parts = parts.subspan(parts.size());
+            return std::nullopt;
+        }
+        for (auto &part : parts)
+        {
+            if (std::addressof(part) == nullptr || part.data() == nullptr || part.empty())
+            {
+                parts = parts.subspan(participant_size);
+                return std::nullopt;
+            }
+        }
+
         sockaddr_in ipv4 = {};
         MachineEndpoint recieved_machine{};
         memset(&ipv4, 0, sizeof(ipv4));
@@ -51,13 +66,13 @@ static inline std::optional<Peer> deserialize_participant(std::span<string> &par
 
         memcpy(recieved_machine.mac.mac_addr, parts[i++].data(), MAC_ADDR_MAX); // add mac_addr (unsigned char*)
         memcpy(recieved_machine.mac.mac_str, parts[i++].data(), MAC_STR_MAX);   // add mac_str (char*)
-        ipv4.sin_port = htons(stoi(parts[i++]));                                // port
+        ipv4.sin_port = htons(std::stoi(parts[i++].data()));                           // port
         ipv4.sin_addr.s_addr = inet_addr(parts[i++].c_str());                   // address
         recieved_machine.hostname = parts[i++];                                 // hostname
-        bool recieved_status = stoi(parts[i++]) && true;                        // status
+        bool recieved_status = std::stoi(parts[i++]);                   // status
         time_t received_time_last = std::stol(parts[i++]);                      // last_conection_timestamp
-        int recieved_id = stoi(parts[i++]);                                     // identification
-        bool recieved_is_manager = stoi(parts[i++]) && true;                    // add is_manager
+        int recieved_id = std::stoi(parts[i++]);                                // identification
+        bool recieved_is_manager = std::stoi(parts[i++]);               // add is_manager
         recieved_machine.socket_address = *(sockaddr *)&ipv4;
         assert("You did an upsie dupsie and potentialy a fucky wacky" && (i == participant_size));
         parts = parts.subspan(participant_size);

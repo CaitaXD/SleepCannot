@@ -334,15 +334,26 @@ void Node::enqueue_messages(int poll_events, int timeout)
         assert(peer.client_socket != nullptr);
         string payload;
         int bytes_received;
+        int r = 0;
         int buffer_size = 1024;
         do
         {
-            bytes_received += socket.recv(payload, buffer_size);
-        } while (bytes_received == buffer_size);
+            r = socket.recv(payload, buffer_size);
+            if (r < 0)
+            {
+                std::error_printf(socket.lasterrno, "Socket::recv");
+                continue;
+            }
+            bytes_received += r;
+        } while (r == buffer_size);
 
-        if (bytes_received >= buffer_size) {
-            LOGF("WHOA TAHTS ALOT OF BYTES");
-        }
+        // if (bytes_received >= buffer_size) {
+        //     #ifdef LOG_ENABLE
+        //         std::cout << CLEAR_SCREEN << std::endl;
+        //         std::cout << "Read " << bytes_received << " bytes from " << peer.machine.hostname << std::endl;
+        //         std::cout << payload << std::endl;
+        //     #endif // LOG_ENABLE
+        // }
 
         if (bytes_received > 0)
         {
